@@ -38,6 +38,8 @@ export interface BoardTask {
   leadSessionId: string | null;
   claimedAt: string | null;
   stopRequested: boolean;
+  /** 用户停止任务的时间（Host 插件据此取消 Lead/规划会话的当前回合） */
+  stopRequestedAt: string | null;
   resumed: boolean;
   lastError: string | null;
   archivedAt: string | null;

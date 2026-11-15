@@ -24,7 +24,7 @@
 | `team_memory_list` | `teamId`、`scope`、`memberId`、`kind`、`tag`、`q`、`limit` | 列记忆元数据（不含 value 正文） |
 | `team_memory_share` | `teamId`、`memoryId`、`visibility:"private"\|"team"\|"shared"` | 改记忆可见性（Lead 把成员记忆转给其他成员） |
 | `team_memory_delete` | `teamId`、`memoryId` | 永久删除一条记忆 |
-| `board_task_create` | `title`、`description`、`workspaceId`、`workspacePath`、`auto`、`needPlan`、`useTeam`、`executionMode`、`gitBranch` | 成员/Lead 在会话里直接建看板任务；`workspaceId` 省略时按 by-session → 唯一工作区推断 |
+| `board_task_create` | `title`、`description`、`workspaceId`、`workspacePath`、`auto`、`needPlan`、`useTeam`、`executionMode`、`gitBranch` | 成员/Lead 在会话里直接建看板任务；`workspaceId` 省略时按 by-session → 唯一工作区推断；不存在时按 `workspacePath` 改挂，仍解析不出报错 |
 | `board_task_get` | `taskId`（可选） | 读看板任务；省略 `taskId` 时返回当前会话关联的任务 |
 | `board_plan_submit` | `plan`、`summary` | 规划会话提交计划：看板任务 `planning → planned`，same 模式同时绑定执行会话 |
 | `board_task_status` | `status:"done"|"failed"|"inprogress"`、`summary` | Lead 会话回报看板任务结果 |
@@ -68,7 +68,7 @@ insert:
 
 ## 泵
 
-心跳（`agentHeartbeatMs`）、上下文（`contextReportMs`）、工作区（`workspaceReportMs`）、模型目录（`llmCatalogMs`）、派发保底（`agentDispatchMs`，`agentAutoDispatch` 开关）、强制停止（`forceStopPollMs`，轮询 `interrupted` 成员并调 `subagents.interrupt`）、steer 队列投递（`steerPollMs`，把面板排进 sidecar 的 `kind='steer'` 消息推进成员会话）。
+心跳（`agentHeartbeatMs`）、上下文（`contextReportMs`）、工作区（`workspaceReportMs`）、模型目录（`llmCatalogMs`）、派发保底（`agentDispatchMs`，`agentAutoDispatch` 开关）、强制停止（`forceStopPollMs`，轮询 `interrupted` 成员并调 `subagents.interrupt`；同时按 `team.stop_requested_at` 取消 Lead 当前回合）、steer 队列投递（`steerPollMs`，把面板排进 sidecar 的 `kind='steer'` 消息推进成员会话）。
 
 ## agent 成员派发时序（插件侧）
 

@@ -9,13 +9,26 @@ const mkFakeCtx = () => {
   const created = [];
   const permissions = [];
   const mounted = [];
+  // 会话内切模型：记录 agent.model.select 的调用，供 prewalk / 自动交接断言。
+  const switches = [];
   const agents = {
     created,
     async create(options) {
       const rec = { options, followups: [], steers: [], disposed: false };
+      let current = {
+        ...(options?.agentOptions?.provider ? { provider: options.agentOptions.provider } : { provider: 'p' }),
+        model: options?.agentOptions?.model || 'default-m',
+      };
       const agent = {
         id: options.sessionId,
         session: { id: options.sessionId, seq: 0, eventAt: () => undefined },
+        model: {
+          current: () => ({ ...current }),
+          select(selection) {
+            current = { ...selection };
+            switches.push({ sessionId: options.sessionId, selection });
+          },
+        },
         followup(message) { rec.followups.push(message); },
         steer(message) { rec.steers.push(message); },
       };
@@ -38,14 +51,6 @@ const mkFakeCtx = () => {
     names: ['read-only', 'workspace-write', 'danger-full-access'],
     set(session, name) { permissions.push({ sessionId: session?.id, name }); },
   };
-  // prewalk 走 Host 的会话级模型选择：只记录调用，不真正改模型。
-  const switches = [];
-  const sessionController = {
-    agents: {
-      selectionFor: () => ({ current: { provider: 'p', model: 'plan-m' } }),
-      selectForNextRequest(agent, selection) { switches.push({ sessionId: agent?.id, selection }); },
-    },
-  };
   const ctx = {
     tools: {
       register: (tool) => { registry.set(tool.name, tool); return () => registry.delete(tool.name); },
@@ -58,7 +63,6 @@ const mkFakeCtx = () => {
       if (name === 'agents') return agents;
       if (name === 'permissionPresets') return presets;
       if (name === 'agentPresets') return agentPresets;
-      if (name === 'sessionController') return sessionController;
       if (name === 'agentDefaultModel') return { currentSelection: () => ({ provider: 'p', model: 'default-m', reasoningEffort: 'high' }) };
       if (name === 'sessions') return { get: (id) => ({ id }) };
       return undefined;
@@ -214,6 +218,26 @@ const main = async () => {
     assert.equal(created.length, 8, 'prewalk 不新建会话');
     assert.equal(prewalkPlanRec.followups.length, 1, 'prewalk 不补发执行 prompt');
     await statusTool.execute({ status: 'done', summary: '完成' }, { agent: { id: prewalkPlanRec.agent.id } });
+
+    // 6) 规划模型 ≠ 执行模型（未开 prewalk）：提交计划时立即切到执行模型并注入执行指令
+    const autoTask = await api.post('/api/board/tasks', {
+      workspaceId: 'ws-bf', title: '自动交接', auto: true, executionMode: 'same',
+      needPlan: true, useTeam: false,
+      planRoute: { provider: 'p', model: 'plan-m' },
+      leadRoute: { provider: 'p', model: 'exec-m' },
+    });
+    const autoRec = await waitFor('auto handoff planning', () => (created[8]?.followups?.length ? created[8] : null));
+    assert.equal(autoRec.options.agentOptions?.model, 'plan-m', '规划会话用规划模型');
+    assert.equal(switches.filter((x) => x.sessionId === autoRec.agent.id).length, 0, '提交计划前不切模型');
+    await planTool.execute({ plan: 'PLAN_AUTO_HANDOFF', summary: '一句话' }, { agent: { id: autoRec.agent.id } });
+    assert.equal((await api.get(`/api/board/tasks/${autoTask.id}`)).status, 'inprogress', '提交计划即进入执行');
+    const autoSwitch = await waitFor('auto handoff switch', () => switches.find((x) => x.sessionId === autoRec.agent.id) || null);
+    assert.equal(autoSwitch.selection.provider, 'p', '切换带上 provider');
+    assert.equal(autoSwitch.selection.model, 'exec-m', '提交计划即切到执行模型');
+    assert.equal(autoRec.steers.at(-1)?.content?.[0]?.text, '继续执行计划', '交接时注入执行指令');
+    assert.equal(autoRec.followups.length, 1, '自动交接不补发执行 prompt');
+    assert.equal(created.length, 9, '自动交接不新建会话');
+    await statusTool.execute({ status: 'done', summary: '完成' }, { agent: { id: autoRec.agent.id } });
 
     console.log('plugin-board-flags: ok');
   } finally {

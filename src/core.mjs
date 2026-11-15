@@ -98,6 +98,7 @@ export class DshTeam {
       leadSessionId: t.lead_session_id || null,
       maxMembers: Number(t.max_members), maxConcurrency: Number(t.max_concurrency),
       failurePolicy: t.failure_policy, maxAttempts: Number(t.max_attempts),
+      stopRequestedAt: t.stop_requested_at || null,
       permissionPreset: t.permission_preset || DEFAULT_PERMISSION_PRESET,
       agentPreset: t.agent_preset || null,
       archivedAt: t.archived_at || null,
@@ -157,6 +158,9 @@ export class DshTeam {
   /** 停止团队：中断所有活跃成员、在途任务转 paused（保留任务与成员，Lead 可再派发）。 */
   stopTeam(teamId, reason = 'panel stop') {
     this.getTeam(teamId);
+    // 记一个停止时间戳：Host 插件轮询 /api/status 时看到它变化，会取消 Lead 会话的当前回合。
+    const stoppedAt = nowIso();
+    this.get('UPDATE team SET stop_requested_at=?, updated_at=? WHERE id=?').run(stoppedAt, stoppedAt, teamId);
     const ids = this.get(
       `SELECT m.id FROM member m JOIN member_state s ON s.member_id=m.id
         WHERE m.team_id=? AND s.status IN ('running','provisioning','blocked')`
@@ -762,6 +766,13 @@ export class DshTeam {
     return {
       asOf: nowIso(),
       version: teamId ? this.scheduler.version(teamId) : this.events.lastEventId(),
+      // 停止团队的 Lead 会话由 Host 插件取消（sidecar 碰不到 DSH 会话）；只要带了停止时间戳，
+      // 插件就按 teamId+时间戳去重，取消一次 Lead 的当前回合。
+      teams: this.get(
+        'SELECT id, lead_session_id, stop_requested_at FROM team WHERE stop_requested_at IS NOT NULL'
+      ).all().map((r) => ({
+        id: r.id, leadSessionId: r.lead_session_id || null, stopRequestedAt: r.stop_requested_at,
+      })),
       members,
       staleMembers: members.filter((m) => m.stale).map((m) => m.id),
       degraded: members.some((m) => m.stale),

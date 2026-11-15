@@ -8,6 +8,16 @@ const main = async () => {
     const api = sidecar.api;
     await api.post('/api/workspaces', { items: [{ id: 'ws-board', title: 'Board', path: tmp.ws }] });
 
+    // 幽灵 workspaceId（模型常填占位 UUID）：按 workspacePath 改挂到已注册工作区，
+    // 否则卡片会挂在一个看板 UI 里根本不存在的 workspace_id 上。
+    const ghost = await api.post('/api/board/tasks', {
+      workspaceId: '00000000-0000-0000-0000-000000000000', workspacePath: tmp.ws,
+      title: '幽灵工作区任务', auto: false,
+    });
+    assertEqual(ghost.workspaceId, 'ws-board', '未知 workspaceId 按路径改挂');
+    assertEqual((await api.get('/api/board?workspaceId=ws-board')).tasks.some((t) => t.id === ghost.id), true, '改挂后在工作区看板可见');
+    await api.del(`/api/board/tasks/${ghost.id}`);
+
     // auto=0：不 claim；start 之后才入队
     let t1 = await api.post('/api/board/tasks', {
       workspaceId: 'ws-board', title: '任务一', description: '只回复 OK', auto: false,
@@ -75,7 +85,8 @@ const main = async () => {
     let blocked = false;
     try { await api.post(`/api/board/tasks/${t1.id}/archive`); } catch (e) { blocked = e.status === 409; }
     assert(blocked, '活动任务禁止封存');
-    await api.post(`/api/board/tasks/${t1.id}/stop`, { reason: '测试停止' });
+    const stoppedTask = await api.post(`/api/board/tasks/${t1.id}/stop`, { reason: '测试停止' });
+    assert(stoppedTask.stopRequestedAt, '停止记录 stopRequestedAt（Host 据此取消会话回合）');
     const archived = await api.post(`/api/board/tasks/${t1.id}/archive`);
     assert(archived.archivedAt, '停止后可封存');
     const restored = await api.post(`/api/board/tasks/${t1.id}/restore`);
@@ -88,6 +99,7 @@ const main = async () => {
     assertEqual(reset.planMd, null, '重置清空计划');
     assertEqual(reset.leadSessionId, null, '重置清空执行会话');
     assertEqual(reset.planningSessionId, null, '重置清空规划会话');
+    assertEqual(reset.stopRequestedAt, null, '重置清空停止时间戳');
 
     // 团队绑定 + by-team
     await api.post(`/api/board/tasks/${t1.id}/teams`, { teamId: 'team-x' });

@@ -349,7 +349,7 @@ done ──user message──► inprogress（仅未封存）
 | `POST` | `/api/board/tasks` | `{workspaceId, title, description?, auto?, executionMode?, priority?, planProvider?, planModel?, planEffort?, teamModels?}` |
 | `PATCH` | `/api/board/tasks/{id}` | 改标题/描述/模型/队列/优先级；不改状态 |
 | `POST` | `/api/board/tasks/{id}/start` | `{mode?: 'same'\|'new'}`；置 `auto=1`，可改 `execution_mode`。todo 走规划，planned 直接等执行 |
-| `POST` | `/api/board/tasks/{id}/stop` | 活动任务 → failed + `stop_requested` |
+| `POST` | `/api/board/tasks/{id}/stop` | 活动任务 → failed + `stop_requested` + `stop_requested_at`（Host 据此取消 Lead/规划会话回合） |
 | `POST` | `/api/board/tasks/{id}/retry` | failed → planned/todo |
 | `POST` | `/api/board/tasks/{id}/reset` | failed/done → `todo`，清空计划、会话绑定与失败信息（需手动 start） |
 | `POST` | `/api/board/tasks/{id}/archive` | 终态任务封存 |

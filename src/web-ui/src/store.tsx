@@ -817,7 +817,7 @@ export function PanelProvider({ children }: { children: ReactNode }) {
       await api('/api/teams/' + enc(id) + '/stop', { method: 'POST', body: {}, onUnauthorized });
       await refreshTeams();
       if (stateRef.current.teamId === id) await refreshAll();
-      toast('已停止团队运行', 'ok');
+      toast('已停止团队运行（成员已中断，Lead 回合会被取消）', 'ok');
     } catch (err) {
       toast('停止团队失败：' + (err instanceof Error ? err.message : String(err)), 'error');
     }

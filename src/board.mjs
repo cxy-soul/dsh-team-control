@@ -189,6 +189,7 @@ export class Board {
       leadSessionId: row.lead_session_id || null,
       claimedAt: row.claimed_at || null,
       stopRequested: !!row.stop_requested,
+      stopRequestedAt: row.stop_requested_at || null,
       resumed: !!row.resumed,
       lastError: row.last_error || null,
       archivedAt: row.archived_at || null,
@@ -242,8 +243,11 @@ export class Board {
   live() {
     // 活跃任务用于推进；终态但仍有 lead 会话的任务也带上，插件重启后
     // 才能继续监听用户追问（done→inprogress）。
+    // 停止后 status 立刻转 failed；规划期停止的任务没有 lead_session_id，
+    // 但规划会话可能还在跑，所以按 stop_requested_at 也把这类任务带出来。
     const rows = this.get(`SELECT * FROM board_task WHERE archived_at IS NULL AND (
-      status IN ('planning','planned','inprogress') OR (status IN ('done','failed') AND lead_session_id IS NOT NULL)
+      status IN ('planning','planned','inprogress')
+      OR (status IN ('done','failed') AND (lead_session_id IS NOT NULL OR (stop_requested_at IS NOT NULL AND planning_session_id IS NOT NULL)))
     ) ORDER BY updated_at DESC LIMIT 200`).all();
     return { tasks: rows.map((r) => this.hydrate(r)) };
   }
@@ -262,11 +266,22 @@ export class Board {
 
   // ---------- 写 ----------
   createTask(body = {}) {
-    const workspaceId = text(body.workspaceId, 200);
+    let workspaceId = text(body.workspaceId, 200);
     if (!workspaceId) throw ERR.bad('workspaceId required');
-    const ws = this.workspace(workspaceId);
-    const workspacePath = text(body.workspacePath || ws?.path || '', 4000);
+    let ws = this.workspace(workspaceId);
+    let workspacePath = text(body.workspacePath || ws?.path || '', 4000);
     if (!workspacePath) throw ERR.bad('workspace path not found');
+    // 未知 workspaceId 但路径能对上已注册工作区：改挂过去。模型常手填占位 UUID
+    // （00000000-…），直接落库的卡会挂在一个 UI 上不存在的“幽灵工作区”，看板按
+    // workspace_id 精确过滤后永远看不到它。
+    if (!ws) {
+      const byPath = this.get('SELECT * FROM workspace WHERE path=? LIMIT 1').get(workspacePath);
+      if (byPath) {
+        workspaceId = byPath.id;
+        workspacePath = byPath.path || workspacePath;
+        ws = byPath;
+      }
+    }
     const title = text(body.title, 500).trim();
     if (!title) throw ERR.bad('title required');
     const mode = MODES.has(body.executionMode) ? body.executionMode : 'same';
@@ -358,8 +373,10 @@ export class Board {
   stopTask(id, body = {}) {
     const cur = this.getTask(id);
     if (!ACTIVE.has(cur.status)) throw ERR.invalidState(`cannot stop from ${cur.status}`);
-    this.get(`UPDATE board_task SET status='failed', stop_requested=1, claim_token=NULL, claimed_at=NULL,
-      last_error=?, updated_at=? WHERE id=?`).run(text(body.reason || 'stopped by user', 1000), nowIso(), cur.id);
+    // 记停止时间戳：Host 插件据此取消该任务 Lead/规划会话的当前回合（solo 任务没有团队，走不了 stopTeam）。
+    const stoppedAt = nowIso();
+    this.get(`UPDATE board_task SET status='failed', stop_requested=1, stop_requested_at=?, claim_token=NULL, claimed_at=NULL,
+      last_error=?, updated_at=? WHERE id=?`).run(stoppedAt, text(body.reason || 'stopped by user', 1000), stoppedAt, cur.id);
     const task = this.getTask(cur.id);
     this.addEvent(task, 'stopped', { reason: task.lastError });
     return task;
@@ -369,7 +386,7 @@ export class Board {
     const cur = this.getTask(id);
     if (!['failed', 'done'].includes(cur.status)) throw ERR.invalidState(`cannot retry from ${cur.status}`);
     const next = cur.needPlan && cur.planMd ? 'planned' : 'todo';
-    this.get(`UPDATE board_task SET status=?, auto=1, force_start=0, stop_requested=0, claim_token=NULL, claimed_at=NULL,
+    this.get(`UPDATE board_task SET status=?, auto=1, force_start=0, stop_requested=0, stop_requested_at=NULL, claim_token=NULL, claimed_at=NULL,
       planning_session_id=NULL, lead_session_id=NULL, resumed=0, last_error=NULL, done_at=NULL, updated_at=? WHERE id=?`)
       .run(next, nowIso(), cur.id);
     const task = this.getTask(cur.id);
@@ -381,7 +398,7 @@ export class Board {
   resetTask(id) {
     const cur = this.getTask(id);
     if (!['failed', 'done'].includes(cur.status)) throw ERR.invalidState(`cannot reset from ${cur.status}`);
-    this.get(`UPDATE board_task SET status='todo', auto=0, force_start=0, stop_requested=0,
+    this.get(`UPDATE board_task SET status='todo', auto=0, force_start=0, stop_requested=0, stop_requested_at=NULL,
       plan_md=NULL, plan_summary=NULL, planning_session_id=NULL, lead_session_id=NULL,
       claim_token=NULL, claimed_at=NULL, resumed=0, last_error=NULL, done_at=NULL, updated_at=? WHERE id=?`)
       .run(nowIso(), cur.id);

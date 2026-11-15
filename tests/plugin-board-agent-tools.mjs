@@ -97,6 +97,23 @@ const main = async () => {
     assert.equal(made.task.prompt, undefined, '不泄露内部 prompt 字段');
     assert.equal(created.length, 0, '不自动执行就不拉起会话');
 
+    // 1b) 手填占位 workspaceId：按 workspacePath 改挂到已注册工作区，不落幽灵工作区
+    const ghosted = await createTool.execute({
+      title: '幽灵工作区任务', description: '路径能对上', workspacePath: tmp.ws,
+      workspaceId: '00000000-0000-0000-0000-000000000000', auto: false,
+    }, exec);
+    assert.equal(ghosted.task.workspaceId, 'ws-at', '占位 workspaceId 按路径改挂');
+
+    // 1c) workspaceId 与路径都对不上：直接报错，不建幽灵卡
+    let ghostErr = null;
+    try {
+      await createTool.execute({
+        title: '无效工作区', workspaceId: '00000000-0000-0000-0000-000000000000',
+        workspacePath: '/definitely/not/a/registered/workspace', auto: false,
+      }, exec);
+    } catch (e) { ghostErr = e; }
+    assert.match(String(ghostErr?.message || ghostErr), /workspaceId 不存在/, '无法解析时拒绝建卡');
+
     // 2) 按 taskId 查看板任务
     const got = await getTool.execute({ taskId: made.task.id }, exec);
     assert.equal(got.task.id, made.task.id);

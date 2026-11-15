@@ -80,7 +80,7 @@ CLI 通过 `<home>/run/sidecar.json` 发现端口，读 `<home>/token` 鉴权；
 | `GET /api/teams` | `?archived=1` 只列已封存 | `{items:[team]}`；默认排除已封存，并触发一次自动封存扫描 |
 | `GET /api/teams/{id}` | — | `{team}` |
 | `PATCH /api/teams/{id}` | 任意可改字段 | `{team}` |
-| `POST /api/teams/{id}/stop` | `{reason?}` | `{team, stopped:[memberId]}`；中断所有 running/provisioning/blocked 成员、在途任务转 `paused`，团队与成员保留；Host 插件随后真正 `subagents.interrupt` 被中断成员的会话 |
+| `POST /api/teams/{id}/stop` | `{reason?}` | `{team, stopped:[memberId]}`；中断所有 running/provisioning/blocked 成员、在途任务转 `paused`，团队与成员保留，并把 `team.stop_requested_at` 更新为当前时间；Host 插件随后真正 `subagents.interrupt` 被中断成员的会话，并取消 Lead 会话的当前回合 |
 | `POST /api/teams/{id}/archive` | `{}` | `{team}`；先停止活跃成员再写 `archivedAt`（团队从默认列表消失，可在设置中恢复） |
 | `POST /api/teams/{id}/restore` | `{}` | `{team}`；清空 `archivedAt`，团队回到默认列表 |
 | `DELETE /api/teams/{id}?confirm=1` | `confirm=1` 必填，否则 `400` | `{removed,id,name}`；物理删除团队及其 member/task/dep/event/approval/message/todo/audit/span/artifact/change/context（库无外键，手工级联） |
@@ -129,7 +129,7 @@ CLI 通过 `<home>/run/sidecar.json` 发现端口，读 `<home>/token` 鉴权；
 ### 3.4 状态与事件
 | 方法 路径 | 说明 |
 |---|---|
-| `GET /api/status?team=&member=` | 全员快照，见下 |
+| `GET /api/status?team=&member=` | 全员快照 + `teams`（只含 `stop_requested_at` 非空的团队：`id`/`leadSessionId`/`stopRequestedAt`），见下 |
 | `GET /api/steps?member=&since=0&limit=200` | `{items:[event]}`，`since` 为 seq 下界（exclusive） |
 | `GET /api/blockers?team=` | `{items:[{memberId,kind,id,detail}]}` |
 | `GET /api/events?team=&member=&lastEventId=` | **SSE**（§4） |
@@ -256,7 +256,7 @@ root(run:team)                         ← 团队整体
 - **成员配置更新**：`team_member({action:"update"})` 只改 `role/permissionPreset` 时 PATCH 元数据并直接把权限预设落到当前会话；若改 `model/agentProvider/contextMode/agentPreset/reasoningEffort`，插件用新配置 `startActivation` 重建子会话、以同名重新 register，再把调用方显式改的字段 PATCH 回元数据（记 `member.update`，不用解析后的继承值覆盖成员覆盖项），最后 `drainChildren` 旧会话（旧版 subagents 退回 `interrupt`）并清掉旧 session 绑定。
 - **成员移除**：`team_member({action:"retire"|"remove"})` 先调 `DELETE /api/members/{id}`（`remove` 必须 `confirm:true`），再释放子会话并清理绑定；运行中的成员必须先 interrupt。
 - **interrupt 冻结会话**：Host 插件把被 Lead interrupt 的 session 放进 `heldSessions`，在 `team_control resume` 前忽略它的 `idle`/`turn-error` 回报，避免 DSH 中断后的 idle 把成员改回 idle 并触发重派。
-- **停止即终止**：`POST /api/teams/{id}/stop` 只在 sidecar 侧落 `interrupted`/`paused`，真正终止由 Host 插件的 `forceStopPump` 完成——每 `forceStopPollMs`（默认 1000ms）轮询 `/api/status`，对刚转为 `interrupted` 且带 `parentSessionId` 的成员调 `subagents.interrupt(sessionId,{kind:'user',parentSessionId})`，并放入 `heldSessions` 忽略其后续 `idle`/`turn-error`。看板 `POST /api/board/tasks/:id/stop` 会对 `board_task_team` 绑定的每个团队执行同一 `stopTeam`。
+- **停止即终止**：`POST /api/teams/{id}/stop` 只在 sidecar 侧落 `interrupted`/`paused`，真正终止由 Host 插件的 `forceStopPump` 完成——每 `forceStopPollMs`（默认 1000ms）轮询 `/api/status`，对刚转为 `interrupted` 且带 `parentSessionId` 的成员调 `subagents.interrupt(sessionId,{kind:'user',parentSessionId})`，并放入 `heldSessions` 忽略其后续 `idle`/`turn-error`。同一轮里，`/api/status` 的 `teams` 会回传 `team.stop_requested_at` 与 `team.lead_session_id`，插件按「teamId + 时间戳」去重后对 Lead 会话调 `agent.cancel({kind:'user'})`（等价用户按停止键：只停当前回合，会话保留；Lead 本来 idle 就不动）。看板 `POST /api/board/tasks/:id/stop` 先把任务置 `failed` 并写 `board_task.stop_requested_at`，再对 `board_task_team` 绑定的每个团队执行同一 `stopTeam`；`boardPump` 每轮读 `/api/board/live`，对带 `stopRequestedAt` 的任务按「taskId + 时间戳」去重，对 `leadSessionId`（规划期用 `planningSessionId`）的活跃会话调 `agent.cancel({kind:'user'})`——因此 solo 看板任务（没有团队）停止时 Lead/规划会话的当前回合也会被取消；停止戳超过 2 分钟的任务只记「已处理」不再取消，避免插件重启后打断用户对终态任务的新追问。`live` 会额外带出「规划期被停止、没有 lead_session_id」的任务，避免规划会话继续空转。重试/重置会清空 `stop_requested_at`，下次停止产生新时间戳。
 - **中断通知 Lead**：`forceStopPump` 对 `blockers.kind==='recover'`（sidecar 重启恢复现场导致的 interrupted）与 `session/event turn/end reason.kind==='error'`（成员回合失败）两类**非 Lead 主动**的中断，用 `subagents.sendMessage(memberAgent, leadSessionId, ...)` 主动推一条「成员中断」说明给 Lead，避免 Lead 挂起时永远等不到成员已断的消息；同一中断（`memberId:seq` / `sessionId:eventSeq:msg`）只推一次。Lead 主动 `interrupt`/`stop`（`blockers.kind==='interrupt'`）不推。
 - **宿主前提**：成员依赖宿主已挂载 `subagents` 服务（`dsh-subagent` bundle）。插件用 `ctx.get('subagents')` 探测；缺失时 `team_spawn` 返回可读错误（`subagents 服务不可用`），不会静默降级建成员。
 
@@ -324,7 +324,9 @@ root(run:team)                         ← 团队整体
 
 两个任务级开关（默认都为 `1`，旧数据/旧调用按开启处理）：`need_plan=0` 时跳过 planning，`todo` 直接等 inprogress 槽位被 claim；`use_team=0` 时执行提示词改为单人模式（禁止 `team_create`/`team_spawn`/`team_task`，不要求加载 `dsh-agent-team` 技能，规划阶段也不再要求成员建议）。same 模式提交计划时 sidecar 直接把任务切到 `inprogress`、claim 执行槽位并 attach 回同一会话，不再补发第二条执行 prompt（规划 prompt 末尾已带执行规则）；执行槽位满时保持 `planned`，等泵 claim 后只补一条「现在开始执行」。新会话执行在 `need_plan=1` 时注入「已确认的计划」。任务进入 `done/failed` 后用户再次发消息，状态回到 `inprogress`，并复用已有 `lead_session_id`（不再新建会话）；此时 `resumed=1`，泵只 attach、不重复注入执行 prompt。
 
-实验性开关 `prewalk`（默认 `0`，仅 `execution_mode=same` 且 `need_plan=1` 时有意义）：规划阶段仍在 `planRoute` 上跑，`board_plan_submit` 把任务切到 `inprogress` 时**只武装交接、不切模型**。规划模型先在同一会话里落下第一笔**成功**的实现动作——首个成功的 `edit`/`write` 类工具结果（工具报错不交接、继续等下一次），团队任务则是首次成功的 `team_task` 派发——之后 Host 插件通过 `sessionController.agents.selectForNextRequest` 把这**同一条会话**的模型切到 `leadRoute`，并注入一条只有「继续」的 steering（不重复计划、不列清单，避免诱导接手模型逐条核对或重新读文件），让接手模型沿原计划继续。会话历史、读过的文件、计划与 todo 全部保留，不新建会话；实现动作已经发生过（插件重启/会话恢复）时立即交接。Host 不支持会话内切模型时保持原模型继续并告警。`PATCH`/`POST` 都接受该字段，`GET` 返回 `prewalk: boolean`。
+`execution_mode=same` 且规划路由与执行路由不同时（比较 `planRoute`/`settings.plan` 与 `leadRoute`/`settings.lead` 的 provider/model/reasoningEffort）：`board_plan_submit` 把任务切到 `inprogress` 后**立即**通过 DSH 的会话级选择 `agent.model.select` 把这**同一条会话**切到执行模型，并注入一条「继续执行计划」的 steering，让执行模型接着完成计划；若执行槽位满、任务停在 `planned`，则在调度器 attach 复用会话时静默切模型，再投执行 prompt。切换只追加会话级 `model/selection` 事件，下一步请求生效并自动带 "model changed" 通知；会话历史、读过的文件、计划与 todo 全部保留，不新建会话，也不改部署默认模型。执行模型未显式配置时不猜部署默认模型，保持原模型继续。
+
+实验性开关 `prewalk`（默认 `0`，仅 `execution_mode=same` 且 `need_plan=1` 时有意义）：规划阶段仍在 `planRoute` 上跑，`board_plan_submit` 把任务切到 `inprogress` 时**只武装交接、不切模型**。规划模型先在同一会话里落下第一笔**成功**的实现动作——首个成功的 `edit`/`write` 类工具结果（工具报错不交接、继续等下一次），团队任务则是首次成功的 `team_task` 派发——之后 Host 插件通过 `agent.model.select` 把这**同一条会话**的模型切到 `leadRoute`，并注入一条只有「继续」的 steering（不重复计划、不列清单，避免诱导接手模型逐条核对或重新读文件），让接手模型沿原计划继续。会话历史、读过的文件、计划与 todo 全部保留，不新建会话；实现动作已经发生过（插件重启/会话恢复）时立即交接。Host 不支持 `agent.model.select` 时回退旧 `sessionController.agents.selectForNextRequest`，两者都没有则保持原模型继续并告警。`PATCH`/`POST` 都接受该字段，`GET` 返回 `prewalk: boolean`。
 
 | 方法 路径 | 请求 | 响应 |
 |---|---|---|
@@ -388,11 +390,13 @@ Host 插件默认 `boardEnabled=true`（显式 `false` 可关闭），每 `board
 
 重试（`retry`）复用已有团队：任务的 `board_task_team` 绑定、计划与 DAG 成员数据都保留，插件在 `boardLeadPrompt` 里把 `task.teams` 告诉新的 Lead，要求先用 `team_status` 查看既有团队、用 `team_task` 追加剩余工作，不再无条件 `team_create`（仅当原团队被删除或不可用时才新建）。提示词是软约束，因此插件另加硬约束：对「spawn 时任务已有关联团队」的续跑会话，`team_create` 若发现原团队仍存在会直接报错并给出继续步骤，只有显式传 `force:true` 或原团队全部被删除/归档时才允许新建。因此失败重试不会再凭空多出一个团队。
 
+Lead 的执行/规划提示词（`boardLeadRules`）在规则前先要求做归属判断：同一目标/模块/文件/验收/分支属于本任务的一部分；交付物或验收不同、需要单独分支或单独规划、做完不再依赖本任务上下文的独立事，走 `board_task_create` 建一张看板卡，不塞进当前团队；用户明确说「建看板任务/加一张卡/单开一个会话」时一律建卡。`team_task` 只拆解当前任务，不会出现在看板上；判断不清时先向用户确认一句。`use_team=0` 的 solo 提示词同样带这段判断。
+
 GUI 入口：`dsh-plugin-ui` 把「编排」与「任务看板」注册成两个独立页签（原生右侧栏对应 `dsh-team` / `dsh-team-board`）。看板页路由为 `#/board[/<workspaceId>]`，不渲染编排侧栏、不依赖当前 team；切换工作区只改 `workspaceId` 与 URL。编排页不再包含任务看板页签。看板任务详情里的「关联团队」按钮通过 `postMessage`（`dsh-team:open-team`）让 Host 切到「编排」页签并锁定该 team；独立浏览器页面（非 DSH 环境）没有 Host，改用 `window.open` 在新窗口打开同一面板的 `#/t/<teamId>` 路由。任务有 `lead_session_id` 时，详情里还会显示「执行会话」按钮：`postMessage`（`dsh-team:open-session`）→ Host `uiWorkspace.openSession(sessionId)`，直接打开 Lead 所在的 DSH 会话；独立页面若已拿到 Host 上报的 `dshWebUrl`，改为 `window.open(\`${dshWebUrl}/#dsh-session=<id>\`)`：DSH 内的 `dsh-plugin-ui` 客户端启动时读取 `location.hash` 里的 `dsh-session`，调 `uiWorkspace.openSession(sessionId)` 打开会话，再用 `history.replaceState` 清掉 hash；Host 未上报 `dshWebUrl` 时回退默认地址 `http://127.0.0.1:3080`（`dsh web` 默认端口）。DSH Web 本身没有会话级 URL 路由，这个 hash 约定完全由本插件两端实现。任务详情面板只读展示字段；右上角的编辑按钮仅在任务处于 `todo` 且未封存时可用，点击后打开编辑对话框（标题、描述、需要规划、开启团队、执行方式、自动入队、git 分支开关与分支名、规划/执行模型、团队模型），保存走 `PATCH /api/board/tasks/:id`。新建任务的「需要规划」默认关闭（关闭时隐藏执行方式/规划模型），「开启团队」默认开启（关闭时隐藏团队模型选择；团队模型不选任何一项即表示不限制）；「创建前切 git 分支」默认关闭，打开后可留空分支名由后端生成 `task/<短号>`。固定停靠层（右侧栏）的看板只在**每次打开时**读取一次当前会话工作区（iframe `&cwd=`）并据此设置工作区下拉，不随会话切换重载；面板内再切工作区只改自身选择。
 
 `gitBranch`（可选，`board_task.git_branch`）是任务开始执行前要切到的分支：`board_task_create` / `POST /api/board/tasks` 传空串表示自动生成 `task/<任务短号>`，传具体名字（字母数字与 `. _ / -`，不能以 `-` 开头或含 `..`，最长 200）表示切到该分支，`null`/缺省表示不切分支。插件在 `spawnBoardSession` 里拉起/复用任何会话**之前**执行切换（`rev-parse --is-inside-work-tree` 校验仓库 → 已在该分支则跳过 → 存在则 `checkout`，否则 `checkout -b`），并把「git 分支：xxx（已切好，不要自行切换）」注入规划/执行 prompt；工作区不是 git 仓库、本机没有 git 或切换失败时只降级告警，任务照常执行，prompt 改为提示模型可自行 `git checkout -b`。
 
-新增工具：`board_plan_submit({plan,summary?})`、`board_task_status({status,summary?})`、`board_task_create({title,description?,workspaceId?,workspacePath?,auto?,needPlan?,useTeam?,executionMode?,gitBranch?})`、`board_task_get({taskId?})`、`team_task_get({taskId,teamId?})`。`board_task_create` / `board_task_get` 面向成员会话：不给 `workspaceId` 时依次用「当前会话所属看板任务的工作区」「唯一工作区」推断；不给 `taskId` 时按调用会话反查看板任务。`team_task_get` 返回团队任务本体与它在 DAG 里的节点（`dependsOn`/`ready`/`blockers`），只允许查本团队任务。`team_create` 在 Lead 会话里创建团队后会自动把 team 绑到该会话对应的 board task；`team_spawn` 在该 task 配了 `teamModels` 时把成员 route 限制在白名单内（未指定 model 取第一条）。`team_models` 的输出把厂商级备注作为 `providerNote` 随每条 route 下发（`note` 仍是模型级备注）。
+新增工具：`board_plan_submit({plan,summary?})`、`board_task_status({status,summary?})`、`board_task_create({title,description?,workspaceId?,workspacePath?,auto?,needPlan?,useTeam?,executionMode?,gitBranch?})`、`board_task_get({taskId?})`、`team_task_get({taskId,teamId?})`。`board_task_create` / `board_task_get` 面向成员会话：不给 `workspaceId` 时依次用「当前会话所属看板任务的工作区」「唯一工作区」推断；给了但解析不出（模型常填 `00000000-…` 占位 UUID）时按 `workspacePath` 改挂到已注册工作区，仍解析不出直接报错——不落库，避免卡片挂到看板 UI 里不存在的幽灵工作区；不给 `taskId` 时按调用会话反查看板任务。`team_task_get` 返回团队任务本体与它在 DAG 里的节点（`dependsOn`/`ready`/`blockers`），只允许查本团队任务。`team_create` 在 Lead 会话里创建团队后会自动把 team 绑到该会话对应的 board task；`team_spawn` 在该 task 配了 `teamModels` 时把成员 route 限制在白名单内（未指定 model 取第一条）。`team_models` 的输出把厂商级备注作为 `providerNote` 随每条 route 下发（`note` 仍是模型级备注）。
 
 ---
 
@@ -454,6 +458,7 @@ v2 删除了 `src/broker.mjs`、`src/policy.mjs`、`src/runner.mjs`、`src/worke
 | `tests/plugin-trace.mjs` | Trace 上报链路（session span 挂成员节点） |
 | `tests/plugin-approval.mjs` | 审批转发：`approval/request` → 通知 Lead → `team_approve` allow=`allowed-once` / deny=`rejected`、非成员放行原链路、非 Lead 被拒；低风险 `npm test` 自动放行（不通知 Lead、镜像 `decidedBy:auto`）、敏感 `rm -rf` 仍转 Lead |
 | `tests/plugin-interrupt-notify.mjs` | 成员意外中断的通知：sidecar 重启 → recover 把在途成员置 `interrupted` 后，`forceStopPump` 用成员 Agent 给 Lead 推「成员中断」（带 teamId/memberId/原因）；同一中断不重复推；`turn/end reason=error` 同样通知 Lead |
+| `tests/plugin-stop-lead.mjs` | 停止团队连带停 Lead：`POST /api/teams/:id/stop` 后 `forceStopPump` 读 `/api/status` 的 `teams[].stopRequestedAt`，对 `lead_session_id` 的活跃会话调 `agent.cancel({kind:'user'})`；同一时间戳只取消一次，Lead 空闲不误伤 |
 | `tests/db-migration.mjs` | 老库就地迁移：schema v1（`team` 无 `permission_preset`、`member` 无 `agent_session_id`）能补列/补索引/升版本，旧数据保留且默认 `workspace-write`，二次打开幂等 |
 
 `tests/run-all.mjs` 先跑全部 `ac-*.mjs`，再跑上述插件/面板/路由/CLI/迁移脚本，任一失败即非零退出。

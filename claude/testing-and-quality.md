@@ -37,7 +37,7 @@ npm run demo                      # demo/run-demo.mjs 手演
 | `changes-diff` | 统一 diff 生成与行数统计 |
 | `panel-contract` | `src/web/panel.html` 与 assets 的引用一致性 |
 | `ui-member-strip` | 面板 `src/web-ui` 侧的组件契约 |
-| `plugin-agent` / `plugin-changes` / `plugin-trace` / `plugin-watchdog` / `plugin-teamid-guard` / `plugin-models` / `plugin-client` | Host/Client 插件行为（AC-15 用**假 ctx** 捕获工具，不拉真 sidecar） |
+| `plugin-agent` / `plugin-changes` / `plugin-trace` / `plugin-watchdog` / `plugin-teamid-guard` / `plugin-models` / `plugin-client` / `plugin-interrupt-notify` / `plugin-stop-lead` | Host/Client 插件行为（AC-15 用**假 ctx** 捕获工具，不拉真 sidecar）；`plugin-stop-lead` 覆盖停止团队后取消 Lead 当前回合 |
 | `llm-catalog` / `pricing` | 模型目录同步、峰值时段计价 |
 | `skill-provider` | skills provider 注册与 `SKILL.md` 可读 |
 | `todo-plan` | 待办清单读写与面板同步 |

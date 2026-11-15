@@ -23,7 +23,7 @@
 - `board_plan_submit`（:2787）→ `POST /api/board/agents/plan`；executionMode=new 时 5s 后 dispose 规划会话。
 - `board_task_status` → `POST /api/board/agents/status` {sessionId,status,summary}。
 - `team_task_get` → `GET /api/tasks/<id>`（校验 teamId 归属）+ `GET /api/dag?team=` 取同 id 节点，返回 { task, node }。
-- `board_task_create` → `POST /api/board/tasks`；`workspaceId` 省略时按 `GET /api/board/by-session/<sid>` → `GET /api/workspaces`（仅 1 个时）推断，否则报缺 workspaceId。
+- `board_task_create` → `POST /api/board/tasks`；`workspaceId` 省略时按 `GET /api/board/by-session/<sid>` → `GET /api/workspaces`（仅 1 个时）推断，否则报缺 workspaceId。传了但不在注册表里时按 `workspacePath` 改挂，仍解析不出直接报错（防幽灵工作区）。
 - `board_task_get` → 有 `taskId` 走 `GET /api/board/tasks/<id>`，否则 `GET /api/board/by-session/<sid>`，结果按 `pick()` 精简字段返回。
 
 ## 配置解析（`resolveConfig`）
@@ -62,6 +62,8 @@ isUp(baseUrl) ? 直接返回
 - 上下文泵：把当前会话的占用（token/消息数）写 `context_snapshot`，面板 Context 视图用。
 - 工作区泵：把 workspace 变更登记进 `workspace` / `file_state`。（注意：当前版本该泵为**占位**，若要做实时索引需补实现。）
 - 模型目录泵：把宿主 enabled 路由同步进 `llm_provider` / `llm_route`，供 `team_models` 与面板 Models 视图读。
+- 强制停止泵：面板/看板停止团队后轮询 `/api/status`，对 `interrupted` 成员真正 `subagents.interrupt`；同时按 `teams[].stopRequestedAt` 对 `team.lead_session_id` 的活跃会话调 `agent.cancel({kind:'user'})`，只停当前回合、不销毁会话。
+- 看板泵：每 `boardDispatchMs` 读 `/api/board/live`；任务带 `stopRequestedAt`（停止后 2 分钟内）时对 `leadSessionId`（规划期 `planningSessionId`）的活跃会话 `agent.cancel({kind:'user'})`，所以没有团队的 solo 任务停止时也会中断会话。
 
 ## 文件改动 diff（`changes.js`）
 

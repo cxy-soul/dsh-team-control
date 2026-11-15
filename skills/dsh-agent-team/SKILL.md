@@ -34,6 +34,9 @@ Lead = 主 agent。职责只有三件：**全局理解项目 → 把活拆成 `t
   **不要写 `sleep` / 延迟脚本 / `until` 轮询循环**「等它跑完」。
 - **保持空闲等用户**：成员在跑时 Lead 应该静默。成员完成、任务推进时 Host 会正常把 Lead 会话拉起，
   不需要 Lead 守着或轮询；不要用 `team_status` 刷进度（要看只在给用户汇报时看一眼快照）。
+- **「新任务」先判归属**：用户提出新需求时，先判断它是不是本任务的下一步。同一目标/模块/验收 → 留在本任务；
+  交付物或验收不同、要单独分支或规划 → 用 `board_task_create` 单开一张卡，**不要塞进当前团队的 DAG**；
+  用户明说「建看板任务 / 加张卡 / 单开会话」就一律建卡。拿不准先问一句。`team_task` 只拆解当前任务，不会出现在看板上。
 - **收尾时提交一个精简 commit**：本批任务全部 `done` 后，由 **Lead** 提交一次（成员不各自提交）：
   只 `git add` 本次任务涉及的文件、commit message 一行说清做了什么，不写多段 body、不把无关改动一起带进来。
 
@@ -192,6 +195,18 @@ team_spawn({ teamId, name:"architect", prompt:"...", agentProvider:"deepseek", m
   不要一条需求一个人。
 - 失败重试 `maxAttempts`（默认 3）+ `failurePolicy`(`continue`/`abort`)。Lead 只在汇报时读一眼 `team_status`，
   不替成员复核产物（见开头「Lead 的边界」）。
+
+### 3.1 新任务 ≠ 当前团队的新 DAG 节点
+
+用户说「再做个 X」「帮我建个任务」时，先判断归属，别条件反射 `team_task`：
+
+| 判据 | 归属 |
+|---|---|
+| 同一目标、同一模块/文件、同一验收、同一分支 | 本任务的一部分 → 照旧 `team_task` 或直接做 |
+| 交付物/验收不同、要单独分支或单独规划、做完不再需要本任务上下文 | 独立任务 → `board_task_create` 建一张新卡 |
+| 用户明确说「建看板任务 / 加一张卡 / 单开一个会话」 | 一律 `board_task_create`，禁止 `team_task` |
+
+`board_task_create` 的 `workspaceId` / `workspacePath` 沿用它所在任务的值，不要手填占位 UUID；判断不清先问用户一句。
 
 ## 4. 常见错法与症状
 

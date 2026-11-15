@@ -218,6 +218,12 @@ export function TaskPanel({
           <span className="text-[11px] text-muted-foreground">更新 {fmtTime(task.updatedAt)}</span>
         </div>
 
+        {task.stopRequestedAt && task.status === 'failed' && (
+          <p className="text-[11px] text-muted-foreground" title="成员与 Lead 的当前回合都会被中断，会话本身保留">
+            已于 {fmtTime(task.stopRequestedAt)} 停止
+          </p>
+        )}
+
         {task.lastError && <p className="ui-tb__error">{task.lastError}</p>}
 
         <div className="ui-tb__panel-actions">

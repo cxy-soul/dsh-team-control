@@ -29,7 +29,7 @@ dsh-team-control 给 DeepSeek Harness（DSH）的 Agent Team 加一层**独立�
 | [入口与启动](claude/entrypoints.md) | CLI / sidecar / 插件 / 面板的启动链路 | 排查「起不来」「没端口」 |
 | [对外接口](claude/public-interfaces.md) | REST、SSE、CLI、20 个 `team_*` + 4 个 `board_*` 工具 | 加接口或改契约 |
 | [依赖与配置](claude/dependencies-and-config.md) | Node 版本、环境变量、插件 config 字段 | 换机器、改端口/数据目录 |
-| [数据模型](claude/data-model.md) | SQLite schema v19、枚举、事件溯源 | 改表、改状态机 |
+| [数据模型](claude/data-model.md) | SQLite schema v21、枚举、事件溯源 | 改表、改状态机 |
 | [测试与质量](claude/testing-and-quality.md) | AC 脚本矩阵（AC-01~19）、harness、演示 | 加测试或复现 bug |
 | [文件地图](claude/file-map.md) | 目录与关键文件清单 | 找文件 |
 | [FAQ](claude/faq.md) | 常见症状 → 定位路径 | 遇到怪现象先查这里 |

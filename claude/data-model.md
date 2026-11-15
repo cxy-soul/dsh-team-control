@@ -2,14 +2,14 @@
 
 > **v2 变更（2026-11）**：worker 运行时与四域 broker 已移除；成员一律是真 sub-agent，权限由 DSH 权限预设按成员分配，成员审批经 `team_approve` 转发给 Lead。下文涉及 `worker` / `broker` / `policy` / `scope` 的段落为历史记录，以 [CONTRACT.md](../docs/CONTRACT.md) 与 [README](../README.md) 为准。
 
-## 表（`src/db.mjs`，`SCHEMA_VERSION = 19`，共 25 张）
+## 表（`src/db.mjs`，`SCHEMA_VERSION = 21`，共 25 张）
 
 | 表 | 角色 |
 |---|---|
 | `meta` | 键值（含 `schema_version`） |
 | `preset` | agentPreset 目录镜像（Host 插件同步：id/name/description/ord/source/file/broken/`doc_json`） |
 | `preset_delete` | 面板删除队列（插件 5s 轮询执行后 ack；`attempts`/`last_error` 记录失败，>=5 次停止重试） |
-| `team` | 团队：`workspace`、`max_members`/`max_concurrency`、失败策略、`permission_preset`、`agent_preset`、`lead_session_id`、归档时间 |
+| `team` | 团队：`workspace`、`max_members`/`max_concurrency`、失败策略、`permission_preset`、`agent_preset`、`lead_session_id`、`stop_requested_at`（最近一次停止，Host 插件据此取消 Lead 回合）、归档时间 |
 | `member` | 成员定义：`role`、`model`、`context_mode`、`agent_provider`、`agent_session_id`、`parent_session_id`、`reasoning_effort`、`permission_preset`、`agent_preset` |
 | `member_state` | **状态真相源**（物化视图）：`status`、`seq`、`step`、`stale` |
 | `task` | 任务/DAG 节点：`status`、`priority`、`acceptance`、`plan`、`attempts` |
@@ -27,7 +27,7 @@
 | `file_state` | 文件基线哈希（供 diff/CAS） |
 | `llm_provider` / `llm_route` | 模型目录与启停开关；`llm_provider.note` 是厂商级备注（「这个厂商擅长什么」），`llm_route.note` 是模型级备注 |
 | `board_settings` | 每工作区看板并发、默认规划/执行模型、权限预设、agentPreset |
-| `board_task` | 看板任务：状态、`auto`、`execution_mode`、路由、计划、两个 sessionId、`claim_token`、`resumed`、`prewalk`（实验性：同会话首次成功实现动作后切执行模型并注入「继续」）、`git_branch`（开始前要切到的分支，空 = 不切）、归档 |
+| `board_task` | 看板任务：状态、`auto`、`execution_mode`、路由、计划、两个 sessionId、`claim_token`、`stop_requested_at`（用户停止时间，Host 据此取消会话回合）、`resumed`、`prewalk`（实验性：同会话首次成功实现动作后切执行模型并注入「继续」）、`git_branch`（开始前要切到的分支，空 = 不切）、归档 |
 | `board_task_team` | 看板任务 ↔ team 多对多绑定 |
 | `board_event` | 看板只增事件（created/claim/attach/planned/done/...） |
 

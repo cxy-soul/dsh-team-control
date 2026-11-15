@@ -47,7 +47,7 @@ App.tsx
 - 列表：`GET /api/board?workspaceId=<id>[&archived=1]` → `{workspace, settings, counts, slots{planning,inprogress}, tasks}`
 - 创建：`POST /api/board/tasks`（`workspaceId/title/description/auto/executionMode('same'|'new')/planRoute/leadRoute/teamModels`）
 - 状态动作：`POST .../start|stop|retry|archive|restore|status`、`PATCH /api/board/tasks/<id>`、`DELETE /api/board/tasks/<id>`；设置 `GET/PUT /api/board/settings`
-- 状态机：`todo → planning(生成 planMd/planningSessionId) → planned → inprogress(leadSessionId) → done|failed`；`stopRequested/resumed/lastError` 为辅助字段
+- 状态机：`todo → planning(生成 planMd/planningSessionId) → planned → inprogress(leadSessionId) → done|failed`；`stopRequested/stopRequestedAt/resumed/lastError` 为辅助字段
 - **两套状态枚举**：sidecar `BoardStatus = 'todo'|'planning'|'planned'|'inprogress'|'done'|'failed'`（lib/board.ts:4）；`board-status-icon.tsx` 的 `BoardStatusKind = 'backlog'|'todo'|'progress'|'review'|'done'|'canceled'` 是 affectUI 视觉分类，需在 TasksView 里映射。
 
 ## 状态层（`store.tsx`，1086 行）

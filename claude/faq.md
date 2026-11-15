@@ -35,6 +35,9 @@ sidecar 的 ready 横幅是 **stdout 第一行单行 JSON**。若前面有任何
 **Q：面板点了停止，成员还在跑？**
 团队停止先由 sidecar 落 `interrupted`/`paused`，再靠 Host 插件 `forceStopPump` 轮询 `/api/status` 调 `subagents.interrupt`；看板停止会对 `board_task_team` 绑定的团队执行同一路径。若仍不停，检查成员是否有 `parentSessionId`（旧数据/未由插件 register 的成员没有），以及插件是否在跑该泵（`forceStopPollMs` 默认 1000ms）。
 
+**Q：点了停止，成员停了但 Lead 还在转？**
+`stopTeam` 会给 `team.stop_requested_at` 打时间戳，`forceStopPump` 每轮读 `/api/status` 的 `teams`，对 `team.lead_session_id` 指向的活跃会话调 `agent.cancel({kind:'user'})`（只停当前回合，会话保留，空闲则不动）。若 Lead 还转：确认团队是 `team_create` 建的（才有 `lead_session_id`）、Lead 会话在本 Host 进程内，且插件已加载本次改动；solo 看板任务没有团队，停止任务只标记 failed，不取消 Lead 回合。
+
 **Q：`npm test` 里某条 AC 偶发失败？**
 AC 全部是真实子进程 + 真实端口。失败时脚本**保留临时目录并打印路径**，进那个目录看 `team.db`（`sqlite3 team.db '.tables'`）与 `logs/`。抖动多半是 `waitFor` 超时太短。
 

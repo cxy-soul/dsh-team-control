@@ -25,7 +25,8 @@ const mkFakeCtx = () => {
   const ctx = {
     tools: { register: (tool) => { registry.set(tool.name, tool); return () => registry.delete(tool.name); }, get: (name) => registry.get(name) },
     agents,
-    workingDirectory,
+    // 故意不挂 ctx.workingDirectory 属性：真实 Cordis ctx 是 Proxy，读未 inject 的服务会抛
+    // cannot get property "workingDirectory" without inject；只能经 ctx.get() 取。
     wsBySession,
     handlers,
     get: (name) => {

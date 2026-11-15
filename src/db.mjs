@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const SCHEMA_VERSION = 19;
+export const SCHEMA_VERSION = 21;
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS team (
   -- 团队默认 agent 组合预设；NULL = 不指定（沿用宿主默认）
   agent_preset TEXT,
   archived_at TEXT,
+  -- 最近一次「停止团队」的时间；Host 插件据此同时取消 Lead 会话当前回合
+  stop_requested_at TEXT,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 
@@ -272,6 +274,7 @@ CREATE TABLE IF NOT EXISTS board_task (
   planning_session_id TEXT, lead_session_id TEXT,
   claim_token TEXT, claimed_at TEXT,
   stop_requested INTEGER NOT NULL DEFAULT 0,
+  stop_requested_at TEXT,
   resumed INTEGER NOT NULL DEFAULT 0,
   last_error TEXT,
   archived_at TEXT,
@@ -336,6 +339,7 @@ export function openDb(file) {
   ensureColumn(db, 'team', 'agent_preset', 'TEXT');
   ensureColumn(db, 'team', 'archived_at', 'TEXT');
   ensureColumn(db, 'team', 'lead_session_id', 'TEXT');
+  ensureColumn(db, 'team', 'stop_requested_at', 'TEXT');
   ensureColumn(db, 'member', 'agent_session_id', 'TEXT');
   ensureColumn(db, 'member', 'reasoning_effort', 'TEXT');
   ensureColumn(db, 'member', 'permission_preset', 'TEXT');
@@ -357,6 +361,7 @@ export function openDb(file) {
   ensureColumn(db, 'board_task', 'prewalk', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'board_task', 'force_start', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'board_task', 'git_branch', 'TEXT');
+  ensureColumn(db, 'board_task', 'stop_requested_at', 'TEXT');
   ensureColumn(db, 'llm_provider', 'note', 'TEXT');
   ensureColumn(db, 'board_settings', 'show_task_sessions', 'INTEGER NOT NULL DEFAULT 1');
   ensureColumn(db, 'preset_delete', 'attempts', 'INTEGER NOT NULL DEFAULT 0');

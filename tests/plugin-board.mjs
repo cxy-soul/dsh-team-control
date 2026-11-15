@@ -14,10 +14,13 @@ const mkFakeCtx = () => {
   const agents = {
     created,
     async create(options) {
-      const rec = { options, followups: [], disposed: false };
+      const rec = { options, followups: [], cancels: [], disposed: false };
       const agent = {
         id: options.sessionId,
         session: { id: options.sessionId },
+        status: 'running',
+        cancels: rec.cancels,
+        cancel(cause) { rec.cancels.push(cause); },
         followup(message) { rec.followups.push(message); },
       };
       rec.agent = agent;
@@ -108,6 +111,8 @@ const main = async () => {
     assert.match(rec.followups[0].content[0].text, /规划 Agent/, '投了规划 prompt');
     assert.match(rec.followups[0].content[0].text, /dsh-agent-team/, '规划 prompt 要求先加载 dsh-agent-team 技能');
     assert.match(rec.followups[0].content[0].text, /board_task_status/, '同会话规划 prompt 自带执行规则，提交后不再补发');
+    assert.match(rec.followups[0].content[0].text, /独立的一件事：调用 board_task_create 给它建一张看板卡/, 'Lead 提示词要求先判断新任务归属');
+    assert.match(rec.followups[0].content[0].text, /team_task 只拆解当前任务/, 'Lead 提示词声明 team_task 只拆当前任务、不上看板');
     assert.equal((await api.get(`/api/board/tasks/${task.id}`)).status, 'planning', '任务进入 planning');
 
     const planTool = ctx.tools.get('board_plan_submit');
@@ -181,6 +186,25 @@ const main = async () => {
     const forced = await teamTool.execute({ name: '并行新团队', workspace: tmp.ws, force: true }, { agent: { id: recRetry.agent.id } });
     assert(forced.team?.id && forced.team.id !== firstTeam.team.id, 'force 放行并行新团队');
     await statusTool.execute({ status: 'done', summary: '续跑完成' }, { agent: { id: recRetry.agent.id } });
+
+    // 停止 solo 任务：没有团队，也要取消 Lead/规划会话的当前回合（stop_requested_at 驱动）
+    await api.post(`/api/board/tasks/${manual.id}/stop`, { reason: '释放并发槽位' }); // 手动任务占着 inprogress 槽位
+    const mark = created.length;
+    const task3 = await api.post('/api/board/tasks', {
+      workspaceId: 'ws-pb', title: '停止任务', auto: true, executionMode: 'same',
+    });
+    const recStop = await waitFor('stop planning session', () => created[mark]?.followups?.length ? created[mark] : null);
+    const stopped = await api.post(`/api/board/tasks/${task3.id}/stop`, { reason: '用户停止' });
+    assert.equal(stopped.status, 'failed', '任务立即 failed');
+    assert(stopped.stopRequestedAt, '任务带 stopRequestedAt');
+    await waitFor('停止后取消规划会话回合', () => (recStop.agent.cancels.length ? true : null), { timeout: 5000, interval: 50 });
+    assert.deepEqual(recStop.agent.cancels[0], { kind: 'user' }, '以用户停止的语义取消');
+    await sleep(700);
+    assert.equal(recStop.agent.cancels.length, 1, '同一 stopRequestedAt 只取消一次');
+
+    // 重试后时间戳清空，再次停止会重新取消（新时间戳）
+    await api.post(`/api/board/tasks/${task3.id}/retry`, {});
+    assert.equal((await api.get(`/api/board/tasks/${task3.id}`)).stopRequestedAt, null, '重试清空停止时间戳');
 
     console.log('plugin-board: ok');
   } finally {
