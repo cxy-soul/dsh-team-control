@@ -99,7 +99,7 @@ const main = async () => {
       { teamId: team.id, name: 'alice', prompt: '你是 alice。', agentProvider: 'openai', model: 'gpt-5', reasoningEffort: 'high' }, lead,
     );
     const specA = ctx.agents.spawned[0].req;
-    assert.deepEqual(specA.request.agentOptions, { provider: 'openai', model: 'gpt-5', reasoningEffort: 'high' }, 'agentOptions 落进 startActivation');
+    assert.deepEqual(specA.agentOptions, { provider: 'openai', model: 'gpt-5', reasoningEffort: 'high' }, 'agentOptions 落进 startActivation');
     assert.deepEqual(alice.agent.route, { provider: 'openai', model: 'gpt-5', reasoningEffort: 'high' }, '返回实际生效 route');
     assert.equal(alice.member.model, 'gpt-5', '成员 model 是真实 model id');
 
@@ -108,7 +108,7 @@ const main = async () => {
       { teamId: team.id, name: 'bob', prompt: '你是 bob。', agentProvider: 'deepseek', model: 'deepseek-chat' }, lead,
     );
     const specB = ctx.agents.spawned[1].req;
-    assert.deepEqual(specB.request.agentOptions, { provider: 'deepseek', model: 'deepseek-chat' }, '同 route 不显式写 effort');
+    assert.deepEqual(specB.agentOptions, { provider: 'deepseek', model: 'deepseek-chat' }, '同 route 不显式写 effort');
     assert.equal(bob.agent.route.reasoningEffort, 'low', '同 route 继承 Lead effort');
 
     // 换 route 且不传 effort → 清空继承（返回 null，agentOptions 不写）
@@ -116,13 +116,13 @@ const main = async () => {
       { teamId: team.id, name: 'carol', prompt: '你是 carol。', agentProvider: 'openai', model: 'gpt-5' }, lead,
     );
     const specC = ctx.agents.spawned[2].req;
-    assert.deepEqual(specC.request.agentOptions, { provider: 'openai', model: 'gpt-5' }, '换 route 不继承 effort');
+    assert.deepEqual(specC.agentOptions, { provider: 'openai', model: 'gpt-5' }, '换 route 不继承 effort');
     assert.equal(carol.agent.route.reasoningEffort, null, '换 route 时 effort 置空');
 
     // 完全省略 route → 无 agentOptions，继承 Lead
     const dave = await tool('team_spawn').execute({ teamId: team.id, name: 'dave', prompt: '你是 dave。' }, lead);
     const specD = ctx.agents.spawned[3].req;
-    assert.equal(specD.request.agentOptions, undefined, '省略 route 时不写 agentOptions');
+    assert.equal(specD.agentOptions, undefined, '省略 route 时不写 agentOptions');
     assert.deepEqual(dave.agent.route, { provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'low' }, '继承 Lead route');
 
     // effort 元数据：适配器声明了 efforts 才会出现在 team_models
@@ -164,7 +164,7 @@ const main = async () => {
       { teamId: team.id, name: 'hank', prompt: '你是 hank。', agentProvider: 'deepseek', model: 'deepseek-reasoner', reasoningEffort: 'high' }, lead,
     );
     assert.equal(hank.member.reasoningEffort, 'high', '成员记录实际生效 effort');
-    assert.equal(ctx.agents.spawned[4].req.request.agentOptions.reasoningEffort, 'high', 'effort 进 agentOptions');
+    assert.equal(ctx.agents.spawned[4].req.agentOptions.reasoningEffort, 'high', 'effort 进 agentOptions');
     const st = await api.get(`/api/status?team=${team.id}`);
     assert.equal(st.members.find((m) => m.name === 'hank').reasoningEffort, 'high', '/api/status 暴露成员 effort');
 

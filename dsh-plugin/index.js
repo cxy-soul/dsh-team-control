@@ -574,6 +574,13 @@ function providerFor(ctx, s, context) {
   return names[0];
 }
 
+// subagents.startActivation 的 delegation request 形状在 DSH 0.2.2 变了：
+// 旧宿主从 spec.request 读 prompt/parent/cwd/agentOptions/agentPreset，新宿主直接读 spec 顶层。
+// 两种形状一起带：新宿主忽略 request，旧宿主忽略摊平字段，一份调用同时兼容。
+function activationSpec(request, base) {
+  return { ...base, ...request, request };
+}
+
 // ---------- 模型路由：DSH ctx.llm 目录 → sidecar 映射 ----------
 //
 // 目录的唯一来源是 Host 的 ctx.llm；这里只把 provider/model 的映射、展示名和
@@ -2681,20 +2688,19 @@ function buildTools(s, ctx) {
       const memberName = String(args.name).trim();
       const description = String(args.description || args.role || memberName).slice(0, 200);
       const sessionId = randomUUID();
-      const started = await subs.startActivation({
+      const started = await subs.startActivation(activationSpec({
+        prompt: [{ type: 'text', text: String(args.prompt) }],
+        parent: caller,
+        ...(team && team.workspace ? { cwd: team.workspace } : {}),
+        ...(Object.keys(agentOptions).length ? { agentOptions } : {}),
+        ...(agentPreset ? { agentPreset } : {}),
+      }, {
         delivery: 'parent',
         childId: sessionId,
         provider,
         label: memberLabel(memberName, description),
-        request: {
-          prompt: [{ type: 'text', text: String(args.prompt) }],
-          parent: caller,
-          ...(team && team.workspace ? { cwd: team.workspace } : {}),
-          ...(Object.keys(agentOptions).length ? { agentOptions } : {}),
-          ...(agentPreset ? { agentPreset } : {}),
-        },
         signal: exec.signal || AbortSignal.timeout(s.requestTimeoutMs),
-      });
+      }));
       // 成员跑的是一整轮 agent loop，结果由 team_report_task 汇报；这里只防止未处理的 rejection。
       if (started && started.result && typeof started.result.catch === 'function') started.result.catch(() => {});
       // 子会话发布后立刻把 preset 落到会话（会覆盖 subagent 继承来的 approval=never）。
@@ -3540,20 +3546,19 @@ function buildTools(s, ctx) {
       if (route.reasoningEffort) agentOptions.reasoningEffort = String(route.reasoningEffort);
 
       const sessionId = randomUUID();
-      const started = await subs.startActivation({
+      const started = await subs.startActivation(activationSpec({
+        prompt: [{ type: 'text', text: `你是团队成员 ${current.name}（${role || 'teammate'}）。配置刚刚更新，这是新的会话；当前没有任务，等待 Lead 派发。收到任务后按简报执行，完成时调用 team_report_task。` }],
+        parent: caller,
+        ...(team.workspace ? { cwd: team.workspace } : {}),
+        ...(Object.keys(agentOptions).length ? { agentOptions } : {}),
+        ...(agentPreset ? { agentPreset } : {}),
+      }, {
         delivery: 'parent',
         childId: sessionId,
         provider,
         label: memberLabel(current.name, String(role || current.name)),
-        request: {
-          prompt: [{ type: 'text', text: `你是团队成员 ${current.name}（${role || 'teammate'}）。配置刚刚更新，这是新的会话；当前没有任务，等待 Lead 派发。收到任务后按简报执行，完成时调用 team_report_task。` }],
-          parent: caller,
-          ...(team.workspace ? { cwd: team.workspace } : {}),
-          ...(Object.keys(agentOptions).length ? { agentOptions } : {}),
-          ...(agentPreset ? { agentPreset } : {}),
-        },
         signal: exec.signal || AbortSignal.timeout(s.requestTimeoutMs),
-      });
+      }));
       if (started && started.result && typeof started.result.catch === 'function') started.result.catch(() => {});
       const presetResult = applyPermissionPreset(ctx, sessionId, permissionPreset);
 

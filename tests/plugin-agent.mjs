@@ -120,18 +120,20 @@ const main = async () => {
     const spec = ctx.agents.spawned[0].req;
     assert.equal(spec.provider, 'spawn', '默认 fresh 走 spawn provider');
     assert.equal(spec.delivery, 'parent', '结果投递回 Lead');
-    assert.equal(spec.request.parent, lead.agent, '父会话就是调用工具的 Lead');
+    assert.equal(spec.parent, lead.agent, '父会话就是调用工具的 Lead');
     assert.equal(spec.childId, sessionId, '子会话 id 由插件预留并注册回 sidecar');
     assert.match(sessionId, /^[0-9a-f-]{36}$/, `sessionId 是随机 UUID，实际 ${sessionId}`);
-    assert.equal(spec.request.prompt[0].text.includes('alice'), true, 'prompt 作为初始指令传给成员');
-    assert.equal(typeof spec.request.cwd, 'string', '成员 cwd 落在团队工作目录');
-    assert.equal(spec.request.cwd, team.workspace, 'cwd 就是 team.workspace');
+    assert.equal(spec.prompt[0].text.includes('alice'), true, 'prompt 作为初始指令传给成员');
+    assert.equal(typeof spec.cwd, 'string', '成员 cwd 落在团队工作目录');
+    assert.equal(spec.cwd, team.workspace, 'cwd 就是 team.workspace');
     assert.equal(spawned.agent.sessionId, sessionId, '返回 agent 诊断信息');
     assert.equal(spawned.member.parentSessionId, 'sess-lead', '登记直接父会话，供面板停止时 user 授权中断');
     assert.equal(spawned.permissionPreset, 'workspace-write', 'spawn 继承团队预设');
     assert.equal(spawned.permissionPresetApplied, true, '预设已落到子会话');
     assert.deepEqual(ctx.presets.applied.at(-1), { session: sessionId, name: 'workspace-write' }, 'permissionPresets.set 被调用');
-    assert.equal(spec.request.agentPreset, 'standard', '成员继承团队的 agentPreset');
+    assert.equal(spec.agentPreset, 'standard', '成员继承团队的 agentPreset');
+    // DSH 0.2.2 起读扁平 spec；旧宿主读 spec.request，调用里保留镜像以兼容两条解析路径。
+    assert.equal(spec.request.agentPreset, 'standard', 'request 镜像仍然带 delegation request');
     assert.equal(spawned.agentPreset, 'standard', '返回值回显 agentPreset');
     asAlice = { agent: { id: sessionId } };
 
@@ -152,7 +154,7 @@ const main = async () => {
     const forked = await tool('team_spawn').execute(
       { teamId: team.id, name: 'bob-fork', prompt: '你是 bob。', contextMode: 'fork', agentPreset: 'reviewer' }, lead,
     );
-    assert.equal(ctx.agents.spawned.at(-1).req.request.agentPreset, undefined, 'fork 不传 agentPreset');
+    assert.equal(ctx.agents.spawned.at(-1).req.agentPreset, undefined, 'fork 不传 agentPreset');
     assert.match(String(forked.agentPresetWarning || ''), /fork/, 'fork 时给出警告');
 
     // ②c Leader 自建 agentPreset：写固定目录 + 立刻注册；内置同名不可覆盖
@@ -376,9 +378,9 @@ const main = async () => {
     const newSession = restarted.member.agentSessionId;
     const rebuiltSpec = ctx.agents.spawned.at(-1).req;
     assert.equal(rebuiltSpec.childId, newSession, 'startActivation 使用新 session');
-    assert.equal(rebuiltSpec.request.agentOptions.provider, 'next-provider', '新 provider 传给子会话');
-    assert.equal(rebuiltSpec.request.agentOptions.model, 'next-model', '新 model 传给子会话');
-    assert.equal(rebuiltSpec.request.agentOptions.reasoningEffort, 'high', '新 effort 传给子会话');
+    assert.equal(rebuiltSpec.agentOptions.provider, 'next-provider', '新 provider 传给子会话');
+    assert.equal(rebuiltSpec.agentOptions.model, 'next-model', '新 model 传给子会话');
+    assert.equal(rebuiltSpec.agentOptions.reasoningEffort, 'high', '新 effort 传给子会话');
     assert(ctx.agents.drains.some((d) => d.childIds.includes(oldSession)), '旧会话被 drainChildren 释放');
 
     // 只改 role 不重建会话
@@ -433,7 +435,7 @@ const main = async () => {
     assert.equal(bob.member.permissionPreset, 'read-only', '成员继承团队 read-only 预设');
     assert.equal(bob.permissionPreset, 'read-only', '返回实际生效预设');
     assert.equal(bob.agentPreset, 'standard', '未指定团队预设时回退宿主默认');
-    assert.equal(ctx.agents.spawned.at(-1).req.request.agentPreset, 'standard', '显式传宿主默认，避免继承 Lead 组合');
+    assert.equal(ctx.agents.spawned.at(-1).req.agentPreset, 'standard', '显式传宿主默认，避免继承 Lead 组合');
 
     await assert.rejects(
       () => tool('team_member').execute({ action: 'remove', teamId: t2Team.id, memberId: bob.member.id }, lead),
