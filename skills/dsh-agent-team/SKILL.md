@@ -160,7 +160,7 @@ team_spawn({ teamId, name:"scout", prompt:"...", agentProvider:"deepseek", model
 team_spawn({ teamId, name:"architect", prompt:"...", agentProvider:"deepseek", model:"deepseek-reasoner", reasoningEffort:"high" })
 ```
 
-- `agentProvider` + `model` 必须是 `team_models` 里出现过的启用项；没启用就报错，别自己拼 id。
+- `agentProvider` 是 **provider id**（如 `deepseek-official`、`zai-coding-cn`），不是模型名；填成模型名会报「不是模型「X」所属的 provider：应填 …」。`agentProvider` + `model` 必须是 `team_models` 里出现过的启用项，没启用就报错，别自己拼 id。
 - 换 route 且不传 `reasoningEffort` → 成员用模型默认值（继承的 effort 被丢弃）；route 不变 → 继承 Lead 的 effort。
 - `team_models` 里每条 route 的 `efforts` 是用户允许派发的 effort（面板「模型路由」页可逐个关闭）：传了被关闭的 effort 会报“已禁止”，传了未声明的值会报“不支持”。被禁止时省略该参数即可用模型默认值。
 - 面板成员卡片与 `team_status.members[].reasoningEffort` 显示成员派发时锁定的 effort。
@@ -215,6 +215,8 @@ team_spawn({ teamId, name:"architect", prompt:"...", agentProvider:"deepseek", m
 | `team_spawn` 报需要 `prompt` | 成员必填 | 写清角色 + 工作目录 + 「完成后调 team_report_task」 |
 | `team_spawn` 报「permissionPreset 不存在」 | 宿主没有这个预设 | 用报错里的「可用预设」，或省略让团队默认值生效 |
 | `team_spawn` 报「agentPreset 不存在」 | profile 里没声明该组合预设 | 用报错里的「可用预设」，或省略沿用好宿主默认 |
+| `team_spawn` 报「agentPreset「X」在宿主里启动失败：…」 | 该预设有插件在宿主里挂载失败（缺包/缺服务），`broken` 在进程内缓存 | 用报错里的「可用预设」；修好环境后需重启 DSH 才会重新挂载 |
+| `team_spawn` 报「agentProvider「X」不是模型「Y」所属的 provider」 | 把模型名当成 provider 填了 | 改成 `team_models` 里的 provider id |
 | 返回 `agentPresetWarning` 提到 fork | `contextMode:'fork'` 继承 Lead 组合 | 改用 `fresh`，或接受成员与 Lead 同组合 |
 | `team_preset` save 报「已由宿主定义」 | id 与内置预设撞名 | 换 id；内置预设只读 |
 | `permissionPresetApplied: false` | 宿主没启用 permission-presets 服务 | 看 `permissionPresetWarning`；成员会按宿主默认权限运行，换团队预设或让用户开插件 |

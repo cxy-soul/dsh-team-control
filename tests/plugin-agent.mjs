@@ -39,7 +39,8 @@ const mkFakeCtx = () => {
   const presetDefs = new Map([['standard', { id: 'standard' }], ['reviewer', { id: 'reviewer' }]]);
   const agentPresets = {
     defaultId: 'standard',
-    async list() { return [...presetDefs.values()].map((d) => ({ id: d.id })); },
+    defs: presetDefs,
+    async list() { return [...presetDefs.values()].map((d) => ({ id: d.id, ...(d.broken ? { broken: d.broken } : {}) })); },
     async register(definition) {
       if (presetDefs.has(definition.id)) throw new Error(`Duplicate agent preset: ${definition.id}`);
       presetDefs.set(definition.id, definition);
@@ -140,6 +141,14 @@ const main = async () => {
       /agentPreset「nope」不存在/,
       '未知 agentPreset 被拒绝',
     );
+    // ②b2 宿主挂载失败的预设：提前报「启动失败」并列出可用预设，而不是让成员白起一轮
+    ctx.get('agentPresets').defs.set('legacy-broken', { id: 'legacy-broken', broken: 'tool-office (@deepseek-ai/dsh-tool-office): never started' });
+    await assert.rejects(
+      () => tool('team_spawn').execute({ teamId: team.id, name: 'old-preset', prompt: 'x', agentPreset: 'legacy-broken' }, lead),
+      /legacy-broken.*在宿主里启动失败：tool-office[\s\S]*可用预设：standard/,
+      '挂载失败的预设被提前拒绝，并给出可用预设',
+    );
+    ctx.get('agentPresets').defs.delete('legacy-broken');
     const forked = await tool('team_spawn').execute(
       { teamId: team.id, name: 'bob-fork', prompt: '你是 bob。', contextMode: 'fork', agentPreset: 'reviewer' }, lead,
     );

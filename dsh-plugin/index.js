@@ -699,7 +699,15 @@ async function assertRouteEnabled(s, ctx, provider, model, effort = null) {
   // 目录里查不到的 route（例如适配器临时提供、未在 listModels 中声明）不拦，避免误伤；
   // 能查到但被停用的，无论是显式指定还是继承 Lead，都拒绝。
   const known = all.filter((m) => (!provider || m.provider === provider) && (!model || m.model === model));
-  if (!known.length) return;
+  if (!known.length) {
+    // 常见错法：agentProvider 填了模型名（如 "glm-5.3"）。这会在成员回合里才炸成
+    // `no adapter registered for provider "glm-5.3"`，白起一轮；这里提前拦。
+    const owners = [...new Set(all.filter((m) => !model || m.model === model).map((m) => m.provider))];
+    if (provider && model && owners.length && !owners.includes(provider)) {
+      throw new Error(`agentProvider「${provider}」不是模型「${model}」所属的 provider：应填 ${owners.join(' 或 ')}。agentProvider 要的是 provider id（见 team_models），不是模型名。`);
+    }
+    return;
+  }
   const enabled = all.filter((m) => m.enabled);
   if (!enabled.length) throw new Error('所有模型路由都已停用：请先在面板「模型路由」页启用，或调用 team_models 查看。');
   if (!known.some((m) => m.enabled)) {
@@ -783,6 +791,13 @@ async function resolveAgentPreset(ctx, requested, fallback, store = null) {
   const ids = Array.isArray(rows) ? rows.map((r) => r && r.id).filter(Boolean) : [];
   if (ids.length && !ids.includes(preset)) {
     throw new Error(`agentPreset「${preset}」不存在；可用预设：${ids.join(', ')}`);
+  }
+  // 宿主挂载失败的预设会在 startActivation 才抛出「xxx: never started」，看不出原因，
+  // 也看不出该换哪个；用 list() 的 broken 提前给可操作提示。
+  const row = Array.isArray(rows) ? rows.find((r) => r && r.id === preset) : null;
+  if (row && row.broken) {
+    const usable = (Array.isArray(rows) ? rows : []).filter((r) => r && r.id && !r.broken).map((r) => r.id);
+    throw new Error(`agentPreset「${preset}」在宿主里启动失败：${String(row.broken).split('\n')[0]}${usable.length ? `。可用预设：${usable.join('、')}（显式传 agentPreset 绕过）` : ''}`);
   }
   return preset;
 }

@@ -168,6 +168,15 @@ const main = async () => {
     const st = await api.get(`/api/status?team=${team.id}`);
     assert.equal(st.members.find((m) => m.name === 'hank').reasoningEffort, 'high', '/api/status 暴露成员 effort');
 
+    // agentProvider 填成模型名：提前报错（否则要等成员回合才炸 no adapter registered）
+    let badProvider = null;
+    try {
+      await tool('team_spawn').execute({ teamId: team.id, name: 'ivy', prompt: '你是 ivy。', agentProvider: 'gpt-5', model: 'gpt-5' }, lead);
+    } catch (e) { badProvider = e; }
+    assert(badProvider, 'agentProvider 填模型名必须提前拒绝');
+    assert.match(String(badProvider.message), /不是模型「gpt-5」所属的 provider：应填 openai/, `错误信息应指出正确 provider，实际：${badProvider.message}`);
+    assert.equal(ctx.agents.spawned.length, 5, 'provider 填错不调 startActivation');
+
     // 面板停用 gpt-5 后，再指定该 route 必须被拒
     await api.patch('/api/llm/routes', { provider: 'openai', model: 'gpt-5', enabled: false, note: '先不用' });
     let err = null;
