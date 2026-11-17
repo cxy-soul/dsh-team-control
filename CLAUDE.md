@@ -56,7 +56,7 @@ graph LR
 | GUI 面板插件 | `dsh-plugin-ui/` | 把面板挂成 better-sidebar 页签/侧栏入口，同源代理到 sidecar | [dsh-plugin-ui/CLAUDE.md](dsh-plugin-ui/CLAUDE.md) |
 | 面板前端 | `src/web-ui/` | React + coss ui 面板源码，构建到 `src/web/` | [src/web-ui/CLAUDE.md](src/web-ui/CLAUDE.md) |
 | 验收脚本 | `tests/` | AC-01~AC-19 + 插件/面板/路由/CLI/迁移脚本，真 sidecar + 假 ctx | [tests/CLAUDE.md](tests/CLAUDE.md) |
-| 契约与决策 | `docs/` | `CONTRACT.md` 实现契约、`adr/` 17 份决策（至 ADR-017 团队进度条改到聊天框上方）、`handoffs/` 交接 | 见 [架构总览](claude/overview.md) |
+| 契约与决策 | `docs/` | `CONTRACT.md` 实现契约、`adr/` 18 份决策（至 ADR-018 优先走原生 send_message）、`handoffs/` 交接 | 见 [架构总览](claude/overview.md) |
 | 需求 | `prd/` | `agent-team-plugin-prd.md`（v1.0）、`implementation-brief.md` | 追溯需求来源 |
 | 技能 | `skills/dsh-agent-team/` | 给模型看的调用配方，插件启动时注册为 skills provider | 改工具描述时同步 |
 | 演示 | `demo/` | `run-demo.mjs` 3 个 sub-agent 成员 + DAG + 中断恢复 + 审批转发；`seed.mjs` 灌数据 | 手工验收体验 |

@@ -40,7 +40,7 @@ Worker 进程以 `node --permission --allow-fs-read=<bundleDir>` 启动（无写
 ### 主轴 3：两种运行时，sidecar 只对 worker 管进程
 
 `runtime:"worker"`：sidecar 派发、拉进程、租约、中断、崩溃恢复全包。
-`runtime:"agent"`：成员是 `subagents.startActivation` 起的真子会话，进程生命周期归 Host 与 DSH。sidecar 的 `dispatchAgentTask` 只做**原子认领**（同事务把 task 置 `running` 并写 `task.dispatch`，不启动任何进程），随后 Host 用 `subagents.sendMessage` 把任务简报投进成员信箱。调度器在 `runtime === "agent"` 时**跳过 worker 派发循环**——否则会给 agent 团队拉起沙箱 worker。
+`runtime:"agent"`：成员是 `subagents.startActivation` 起的真子会话，进程生命周期归 Host 与 DSH。sidecar 的 `dispatchAgentTask` 只做**原子认领**（同事务把 task 置 `running` 并写 `task.dispatch`，不启动任何进程），随后 Host 用统一投递入口 `sendAgentMessage` 把任务简报投进成员信箱（高版本走原生 `send_message` 工具，低版本 `subagents.sendMessage`，见 ADR-018）。调度器在 `runtime === "agent"` 时**跳过 worker 派发循环**——否则会给 agent 团队拉起沙箱 worker。
 
 ## 关键设计取舍（详见 `docs/adr/`）
 

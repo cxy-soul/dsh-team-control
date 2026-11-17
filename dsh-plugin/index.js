@@ -232,6 +232,83 @@ const subagentsOf = (ctx) => { try { return ctx.get('subagents'); } catch { retu
 const agentsOf = (ctx) => { try { return ctx.get('agents'); } catch { return undefined; } };
 const subagentNames = (ctx) => { const svc = subagentsOf(ctx); return svc && typeof svc.list === 'function' ? svc.list() : []; };
 
+/**
+ * 原生 agent 消息工具：DSH 0.2.2 起把「给另一个 agent 发消息」收敛成工具，
+ * 工具名是下划线版 `send_message`；连字符 `send-message` 作为别名一起探测，防止宿主改名。
+ */
+const NATIVE_SEND_TOOLS = ['send_message', 'send-message'];
+const toolsOf = (ctx) => ctx?.tools || (() => { try { return ctx.get('tools'); } catch { return undefined; } })();
+
+/**
+ * 探测宿主是否提供原生消息工具（高版本 DSH），返回 `{ tools, name }`。
+ *
+ * 查可见性时要带发送者作用域：工具可能注册在 agent preset 的 scope 里，只查全局会漏；
+ * 低版本没有这个工具（或没有 `tools.execute`）时返回 undefined，调用方继续走 `subagents.sendMessage`。
+ */
+function nativeSendTools(ctx, sender) {
+  const tools = toolsOf(ctx);
+  if (!tools || typeof tools.get !== 'function' || typeof tools.execute !== 'function') return undefined;
+  for (const name of NATIVE_SEND_TOOLS) {
+    try {
+      if (tools.get(name, sender)) return { tools, name };
+    } catch { /* 查不到就继续试下一个名字 */ }
+  }
+  return undefined;
+}
+
+/** 还有没有可用的投递通道：原生工具，或低版本的 `subagents.sendMessage`。 */
+function canDeliverTo(ctx, sender) {
+  if (!sender) return false;
+  if (nativeSendTools(ctx, sender)) return true;
+  const subs = subagentsOf(ctx);
+  return !!subs && typeof subs.sendMessage === 'function';
+}
+
+/**
+ * 把一条文本消息投进某个 agent 会话（成员与 Lead 一视同仁）。
+ *
+ * - 高版本 DSH 提供原生 `send_message` 工具：走工具层调用，接收方由宿主 `resolveName` 解析
+ *   （传 sessionId 时它会被原样当作会话 id），消息来源标记、空闲唤醒、后续语义变化都交给宿主；
+ * - 低版本没有该工具：保持原来的 `subagents.sendMessage(sender, sessionId, content, { signal })`。
+ *
+ * `sender` 必须是精确的活跃 Agent（两代实现都这么要求），调用方负责从 `agents` 注册表或缓存的
+ * Lead 句柄里取。
+ */
+async function sendAgentMessage(ctx, sender, targetSessionId, text, opts = {}) {
+  const native = nativeSendTools(ctx, sender);
+  if (native) {
+    const callId = `team-send-${randomUUID()}`;
+    const batch = await native.tools.execute({
+      calls: [{
+        type: 'tool-call',
+        id: callId,
+        name: native.name,
+        arguments: JSON.stringify({ agent: String(targetSessionId), message: String(text) }),
+      }],
+      signal: opts.signal || AbortSignal.timeout(60000),
+      agent: sender,
+    });
+    const results = Array.isArray(batch?.results) ? batch.results : [];
+    const result = (results.find((r) => r && r.callId === callId) || results[0])?.result;
+    if (!result) throw new Error('send_message 工具没有返回执行结果');
+    if (result.isError) {
+      const failure = result.error || {};
+      throw new Error(`send_message 工具投递失败：${failure.message || failure.code || '未知错误'}`);
+    }
+    const messageId = result.value && result.value.messageId;
+    return { via: 'tool', messageId: messageId != null ? String(messageId) : undefined };
+  }
+  const subs = subagentsOf(ctx);
+  if (!subs || typeof subs.sendMessage !== 'function') throw new Error('subagents 服务不可用，无法投递消息');
+  const messageId = await subs.sendMessage(
+    sender,
+    String(targetSessionId),
+    [{ type: 'text', text: String(text) }],
+    opts.signal ? { signal: opts.signal } : {},
+  );
+  return { via: 'service', messageId: messageId != null ? String(messageId) : undefined };
+}
+
 /** `sessions` / `workspaceChanges`：读成员自己会话里的交付文件（都是可选依赖）。 */
 const sessionsOf = (ctx) => { try { return ctx.get('sessions'); } catch { return undefined; } };
 const workspaceChangesOf = (ctx) => { try { return ctx.get('workspaceChanges'); } catch { return undefined; } };
@@ -1083,8 +1160,7 @@ function taskBrief(teamId, task, member) {
 
 /** 把任务投递给成员：由 Lead 发一条消息进成员信箱（running 时在最近 step 边界送达）。 */
 async function deliverTask(s, ctx, lead, teamId, task, member) {
-  const subs = subagentsOf(ctx);
-  if (!subs || typeof subs.sendMessage !== 'function') throw new Error('subagents 服务不可用，无法派发给 agent 成员');
+  if (!canDeliverTo(ctx, lead)) throw new Error('subagents 服务不可用，无法派发给 agent 成员');
   if (!member.agentSessionId) throw new Error(`成员 ${member.name} 还没有绑定 sub-agent 会话`);
   const brief = taskBrief(teamId, task, member);
   // 简报本身就是一条 Lead→成员的消息：先落信箱，面板【消息与回执】才有「提问 → 回复」可配对；
@@ -1097,8 +1173,9 @@ async function deliverTask(s, ctx, lead, teamId, task, member) {
     });
     messageId = recorded?.message?.id || null;
   } catch { messageId = null; }
-  const content = [{ type: 'text', text: brief }];
-  await subs.sendMessage(lead, String(member.agentSessionId), content, { signal: AbortSignal.timeout(s.requestTimeoutMs) });
+  await sendAgentMessage(ctx, lead, String(member.agentSessionId), brief, {
+    signal: AbortSignal.timeout(s.requestTimeoutMs),
+  });
   await markDelivered(s, messageId);
 }
 
@@ -1306,8 +1383,7 @@ function cancelPendingApprovals() {
 }
 
 async function notifyLeadOfApproval(s, ctx, req, info) {
-  const subs = subagentsOf(ctx);
-  if (!subs || typeof subs.sendMessage !== 'function' || !req?.agent) return false;
+  if (!req?.agent || !canDeliverTo(ctx, req.agent)) return false;
   const team = await teamOf(s, info.teamId);
   const leadId = leadByTeam.get(info.teamId)?.id != null
     ? String(leadByTeam.get(info.teamId).id)
@@ -1328,7 +1404,7 @@ async function notifyLeadOfApproval(s, ctx, req, info) {
     `拒绝：把 decision 改成 "deny"（可加 reason）。`,
     `超过 ${minutes} 分钟未决定将自动拒绝。`,
   ].join('\n');
-  await subs.sendMessage(req.agent, leadId, [{ type: 'text', text }], { signal: AbortSignal.timeout(s.requestTimeoutMs) });
+  await sendAgentMessage(ctx, req.agent, leadId, text, { signal: AbortSignal.timeout(s.requestTimeoutMs) });
   return true;
 }
 
@@ -1344,14 +1420,13 @@ const interruptNotified = new Set();
  * 会话已经回收时发不出去——那种情况事件流/面板里仍有记录，不阻塞其它泵。
  */
 async function notifyLeadOfMemberInterrupt(s, ctx, info) {
-  const subs = subagentsOf(ctx);
-  if (!subs || typeof subs.sendMessage !== 'function' || !info) return false;
+  if (!info) return false;
   const sessionId = info.sessionId != null ? String(info.sessionId) : null;
   const teamId = info.teamId != null ? String(info.teamId) : null;
   if (!sessionId || !teamId) return false;
   const agents = agentsOf(ctx);
   const sender = agents && typeof agents.get === 'function' ? agents.get(sessionId) : undefined;
-  if (!sender) return false;
+  if (!sender || !canDeliverTo(ctx, sender)) return false;
   let leadId = info.leadSessionId != null ? String(info.leadSessionId) : null;
   if (!leadId) {
     const cached = leadByTeam.get(teamId);
@@ -1384,7 +1459,7 @@ async function notifyLeadOfMemberInterrupt(s, ctx, info) {
         : `下一步：team_status({ teamId: "${teamId}" }) 看进度；确认后 team_dispatch 重新派发。`),
   ];
   try {
-    await subs.sendMessage(sender, leadId, [{ type: 'text', text: lines.join('\n') }], {
+    await sendAgentMessage(ctx, sender, leadId, lines.join('\n'), {
       signal: AbortSignal.timeout(s.requestTimeoutMs),
     });
     return true;
@@ -1736,14 +1811,12 @@ const steerInFlight = new Set();
 
 async function steerPump(s, ctx) {
   if (!sessionMember.size) return;
-  const subs = subagentsOf(ctx);
-  if (!subs || typeof subs.sendMessage !== 'function') return;
   const teams = new Set();
   for (const binding of sessionMember.values()) if (binding?.teamId) teams.add(binding.teamId);
 
   for (const teamId of teams) {
     const caller = leadByTeam.get(teamId);
-    if (!caller) continue;
+    if (!caller || !canDeliverTo(ctx, caller)) continue;
     const res = await request(
       s,
       `/api/messages${qs({ team: teamId, status: 'queued', limit: 100 })}`,
@@ -1770,7 +1843,7 @@ async function steerPump(s, ctx) {
       if (!text) { await markDelivered(s, message.id); continue; }
       steerInFlight.add(message.id);
       try {
-        await subs.sendMessage(caller, String(binding[0]), [{ type: 'text', text }], {
+        await sendAgentMessage(ctx, caller, String(binding[0]), text, {
           signal: AbortSignal.timeout(s.requestTimeoutMs),
         });
         await markDelivered(s, message.id);
@@ -3030,8 +3103,7 @@ function buildTools(s, ctx) {
       const subs = subagentsOf(ctx);
       // 成员之间互通必须借 Lead 的 agent 句柄：成员会话都挂在 Lead 下，成员直发会「belongs to another parent session」。
       const caller = leadByTeam.get(args.teamId) || exec?.agent;
-      if (!subs || typeof subs.sendMessage !== 'function' || !caller) return { ...recorded, delivered: false };
-      const content = [{ type: 'text', text: String(args.message) }];
+      if (!caller || !canDeliverTo(ctx, caller)) return { ...recorded, delivered: false };
       const candidates = args.to === '*' ? members : [resolve(args.to)].filter(Boolean);
       const targets = candidates.filter((m) => m.agentSessionId);
       const delivered = [];
@@ -3053,7 +3125,9 @@ function buildTools(s, ctx) {
               interruptErrors.push({ target: target.name, error: String(err?.message || err) });
             }
           }
-          await subs.sendMessage(caller, sid, content, { signal: AbortSignal.timeout(s.requestTimeoutMs) });
+          await sendAgentMessage(ctx, caller, sid, String(args.message), {
+            signal: AbortSignal.timeout(s.requestTimeoutMs),
+          });
           delivered.push(target.name);
           // 投递成功才补记送达：这一条消息确实进了成员会话
           const row = (recorded.messages || [recorded.message]).find((m) => m && String(m.to) === String(target.id));
