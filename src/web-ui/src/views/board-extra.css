@@ -55,7 +55,10 @@
 :where(.dark,[data-theme="dark"]) .ui-tb__act[data-primary]{background:rgba(47,107,255,.16);box-shadow:inset 0 0 0 1px rgba(47,107,255,.45);color:#6b95ff}
 .ui-tb button.ui-tb__auto{height:18px;min-height:18px;font-size:10px;line-height:16px;padding:0 5px;border:0;border-radius:5px;background:#eef3ff;color:#2f6bff;font-weight:600;letter-spacing:.02em;white-space:nowrap}
 .ui-tb__count-badge{display:inline-flex;align-items:center;gap:2px;font-size:10.5px;color:var(--ui-tb-muted)}
-.ui-tb__col-hint{font-size:10.5px;color:var(--ui-tb-muted);margin-left:auto;white-space:nowrap}
+.ui-tb button.ui-tb__col-menu{margin-left:auto;display:grid;place-items:center;width:22px;height:22px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--ui-tb-muted);font-size:12px}
+.ui-tb button.ui-tb__col-menu:hover{background:rgba(0,0,0,.06);color:var(--ui-tb-ink)}
+.ui-tb button.ui-tb__col-menu[disabled]{opacity:.45;pointer-events:none}
+:where(.dark,[data-theme="dark"]) .ui-tb button.ui-tb__col-menu:hover{background:rgba(255,255,255,.08)}
 .ui-tb__teams{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .ui-tb button.ui-tb__team-link{display:inline-flex;align-items:center;gap:5px;max-width:100%;height:24px;padding:0 8px;border:1px solid var(--ui-tb-line);border-radius:7px;background:transparent;color:var(--ui-tb-text);font-size:11px;line-height:22px;cursor:pointer}
 .ui-tb button.ui-tb__team-link:hover{border-color:var(--ui-tb-accent);color:var(--ui-tb-accent);background:color-mix(in srgb,var(--ui-tb-accent) 6%,transparent)}

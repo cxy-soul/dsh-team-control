@@ -6,8 +6,10 @@
  * 拆分自 Tasks.tsx，行为不变。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, Archive, ArchiveRestore, ClipboardList, Loader2, Plus, Search, Settings2 } from 'lucide-react';
+import { Activity, Archive, ArchiveRestore, ClipboardList, Loader2, MoreHorizontal, Plus, Search, Settings2, Trash2 } from 'lucide-react';
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from '@/components/ui/menu';
 import { Tabs, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Tooltip, TooltipPopup, TooltipTrigger } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
@@ -29,6 +31,51 @@ import { TaskPanel } from './TaskPanel';
 import { TaskProgress } from './TaskProgress';
 import { COLUMNS, STATUS_ORDER, errText, type ModelOption, type ModelsResponse } from './shared';
 
+/** 正在跑的状态：清空列时一律跳过。 */
+const RUNNING_STATUSES: BoardStatus[] = ['planning', 'inprogress'];
+
+/** 列头右侧 dots 菜单：目前只有「清空」。 */
+function ColumnMenu({
+  label,
+  clearable,
+  busy,
+  onClear,
+}: {
+  label: string;
+  clearable: number;
+  busy: boolean;
+  onClear: () => void;
+}) {
+  return (
+    <Menu>
+      <MenuTrigger
+        render={
+          <button
+            type="button"
+            className="ui-tb__col-menu"
+            aria-label={`${label} 列操作`}
+            title={`${label} 列操作`}
+            disabled={busy}
+          />
+        }
+      >
+        <MoreHorizontal size={14} />
+      </MenuTrigger>
+      <MenuPopup align="end" className="w-36">
+        <MenuItem
+          variant="destructive"
+          onClick={onClear}
+          disabled={busy || clearable === 0}
+          title={clearable === 0 ? '该列没有可清空的任务（运行中的任务不会被清空）' : `清空该列 ${clearable} 个任务`}
+        >
+          <Trash2 />
+          清空
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
 export function TasksView({ workspaceId: workspaceIdProp, standalone = false }: {
   workspaceId?: string | null;
   standalone?: boolean;
@@ -49,6 +96,7 @@ export function TasksView({ workspaceId: workspaceIdProp, standalone = false }: 
   const [busy, setBusy] = useState('');
   const [models, setModels] = useState<ModelOption[]>([]);
   const [dragTask, setDragTask] = useState<BoardTask | null>(null);
+  const [clearTarget, setClearTarget] = useState<{ column: { id: string; label: string }; targets: BoardTask[] } | null>(null);
   const rootRef = useRef<HTMLElement | null>(null);
   const detailRef = useRef<HTMLDivElement | null>(null);
   const scrollToDetail = useRef(false);
@@ -233,6 +281,29 @@ export function TasksView({ workspaceId: workspaceIdProp, standalone = false }: 
     void run(`${task.id}:auto`, () => boardApi.update(task.id, { auto: !task.auto }), task.auto ? '已关闭自动入队' : '已开启自动入队');
   };
 
+  /** 清空某一列：只删非运行中的任务，运行中的（planning/inprogress）保持不动。 */
+  const askClearColumn = (column: { id: string; label: string; statuses: BoardStatus[] }) => {
+    const targets = filtered.filter(
+      (task) => column.statuses.includes(task.status) && !RUNNING_STATUSES.includes(task.status),
+    );
+    if (targets.length === 0) return;
+    setClearTarget({ column, targets });
+  };
+
+  const doClearColumn = () => {
+    const pending = clearTarget;
+    setClearTarget(null);
+    if (!pending) return;
+    const { column, targets } = pending;
+    void run(`column:${column.id}:clear`, async () => {
+      for (const task of targets) await boardApi.remove(task.id);
+      if (targets.some((task) => task.id === selectedId)) {
+        setSelectedId(null);
+        setEditTaskId(null);
+      }
+    }, `已清空 ${targets.length} 个任务`);
+  };
+
   const onDropColumn = (columnId: string) => {
     const task = dragTask;
     setDragTask(null);
@@ -361,11 +432,13 @@ export function TasksView({ workspaceId: workspaceIdProp, standalone = false }: 
                     <span className="ui-tb__status"><StatusIcon kind={column.icon} /></span>
                     <span className="ui-tb__col-title">{column.label}</span>
                     <span className="ui-tb__col-count">{items.length}</span>
-                    {column.id === 'waiting' && (
-                      <span className="ui-tb__col-hint">待办 / 已规划 / 失败</span>
-                    )}
-                    {column.id === 'progress' && (
-                      <span className="ui-tb__col-hint">规划中 / 执行中</span>
+                    {column.id !== 'done' && (
+                      <ColumnMenu
+                        label={column.label}
+                        clearable={items.filter((task) => !RUNNING_STATUSES.includes(task.status)).length}
+                        busy={!!busy}
+                        onClear={() => askClearColumn(column)}
+                      />
                     )}
                   </div>
                   <div className="ui-tb__cards">
@@ -487,6 +560,17 @@ export function TasksView({ workspaceId: workspaceIdProp, standalone = false }: 
         settings={data?.settings || null}
         models={models}
         onSaved={async () => { setSettingsOpen(false); await load(true); toast('看板设置已保存', 'ok'); }}
+      />
+
+      <ConfirmDialog
+        open={!!clearTarget}
+        onOpenChange={(open) => { if (!open) setClearTarget(null); }}
+        title="清空任务"
+        description={clearTarget
+          ? `「${clearTarget.column.label}」列的 ${clearTarget.targets.length} 个任务将被删除，运行中的任务会保留；删除后无法恢复。`
+          : ''}
+        confirmText="清空"
+        onConfirm={doClearColumn}
       />
 
     </section>

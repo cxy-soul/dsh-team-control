@@ -3,7 +3,9 @@
  * 编辑仅对待办任务可用；停止对非进行中的任务禁用；重置仅对已结束（完成/失败）的任务可用；
  * 删除会二次确认，进行中的任务需先停止。
  */
+import { useState } from 'react';
 import { Archive, ArchiveRestore, MoreHorizontal, Pencil, RotateCcw, Square, Trash2 } from 'lucide-react';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from '@/components/ui/menu';
 import type { BoardTask } from '@/lib/board';
 import { cn } from '@/lib/utils';
@@ -34,11 +36,7 @@ export function TaskActionsMenu({
   const isBusy = busy.startsWith(`${task.id}:`);
   const active = task.status === 'planning' || task.status === 'inprogress';
   const terminal = task.status === 'done' || task.status === 'failed';
-
-  const confirmDelete = () => {
-    if (!window.confirm(`删除任务「${task.title}」？删除后无法恢复。`)) return;
-    onDelete();
-  };
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const confirmReset = () => {
     if (!window.confirm(`重置任务「${task.title}」为待办？将清空计划、执行记录与失败信息。`)) return;
@@ -104,7 +102,7 @@ export function TaskActionsMenu({
           )}
           <MenuItem
             variant="destructive"
-            onClick={confirmDelete}
+            onClick={() => setDeleteOpen(true)}
             disabled={active || isBusy}
             title={active ? '请先停止任务' : undefined}
           >
@@ -113,6 +111,14 @@ export function TaskActionsMenu({
           </MenuItem>
         </MenuPopup>
       </Menu>
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="删除任务"
+        description={`任务「${task.title}」删除后无法恢复。`}
+        confirmText="删除"
+        onConfirm={onDelete}
+      />
     </span>
   );
 }
