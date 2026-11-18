@@ -1,6 +1,6 @@
 ---
 name: dsh-agent-team
-description: 用 dsh-team 插件编排「真 sub-agent 成员」团队的最小可用流程：dsh_team_create → dsh_team_spawn → dsh_team_task → 成员 dsh_team_report_task → dsh_team_status/dsh_team_report；含 20 个 dsh_team_* 工具的字段清单、按任务难度给成员分配 provider/model/思考强度、按成员分配 permissionPreset 沙箱预设与 agentPreset 组合预设（工具/skill/MCP）、成员审批转发给 Lead 后由 dsh_team_approve 决定，以及 Lead（主 agent）的边界：只协调、不写代码、不做二次验收、派发完就结束回话、收尾提一个精简 commit。Use when the user asks to create an agent team, orchestrate teammates, dispatch parallel work to sub-agents, or when a dsh_team_* call failed with an unexpected shape (unknown teamId, assignee by name, member never reports, approval timeout).
+description: 用 dsh-team 插件编排「真 sub-agent 成员」团队的最小可用流程：dsh_team_create → dsh_team_spawn → dsh_team_task → 成员 dsh_team_report_task → dsh_team_status/dsh_team_report；含 20 个 dsh_team_* 工具的字段清单、按任务难度给成员分配 provider/model/思考强度、按成员分配 permissionPreset 沙箱预设与 agentPreset 组合预设（工具/skill/MCP）、成员审批转发给 Lead 后由 dsh_team_approve 决定，以及 Lead（主 agent）的边界：只协调、不写代码、不做二次验收、派发完就结束回话、成员在跑时不催进度/不追问/不重发简报、收尾提一个精简 commit。Use when the user asks to create an agent team, orchestrate teammates, dispatch parallel work to sub-agents, or when a dsh_team_* call failed with an unexpected shape (unknown teamId, assignee by name, member never reports, approval timeout).
 user-invocable: true
 version: "2.0.0"
 ---
@@ -21,7 +21,7 @@ version: "2.0.0"
 ## ⚠️ 先读：Lead 的边界（主 agent 只做协调）
 
 Lead = 主 agent。职责只有三件：**全局理解项目 → 把活拆成 `dsh_team_task` 派给成员 → 在用户和成员之间传话**。
-下面五条是硬边界，违反它们比派错任务更伤：
+下面几条是硬边界，违反它们比派错任务更伤：
 
 - **不写代码**：改文件、跑命令、修 bug、写脚本都属于成员。Lead 一旦自己下手，就会和成员的改动互相覆盖，
   也失去并行的意义。只有用户明确说「你直接改」时才例外。
@@ -34,6 +34,12 @@ Lead = 主 agent。职责只有三件：**全局理解项目 → 把活拆成 `d
   **不要写 `sleep` / 延迟脚本 / `until` 轮询循环**「等它跑完」。
 - **保持空闲等用户**：成员在跑时 Lead 应该静默。成员完成、任务推进时 Host 会正常把 Lead 会话拉起，
   不需要 Lead 守着或轮询；不要用 `dsh_team_status` 刷进度（要看只在给用户汇报时看一眼快照）。
+- **成员在跑就不干涉**（最容易犯的一条）：成员 `running` 期间，Lead 既不催进度、也不追问「到哪了 / 还要多久」、
+  更不重发任务简报。`dsh_team_send` 是**改道工具，不是催工工具**——它默认先打断成员当前回合，
+  催一次就丢一次中间成果，还会把成员逼成「为了回话而提前交卷」。要么挂起等它自己
+  `dsh_team_report_task`，要么只在三种情况发：方向性错误必须立刻纠正（发一次、说清改什么，
+  用 `interrupt:false` 让它在下一个 step 生效）、成员 `blocked` 需要决策、成员报错需要补信息。
+  发完立刻结束回合，不要等答复。
 - **「新任务」先判归属**：用户提出新需求时，先判断它是不是本任务的下一步。同一目标/模块/验收 → 留在本任务；
   交付物或验收不同、要单独分支或规划 → 用 `dsh_team_board_task_create` 单开一张卡，**不要塞进当前团队的 DAG**；
   用户明说「建看板任务 / 加张卡 / 单开会话」就一律建卡。拿不准先问一句。`dsh_team_task` 只拆解当前任务，不会出现在看板上。
@@ -176,7 +182,7 @@ dsh_team_spawn({ teamId, name:"architect", prompt:"...", agentProvider:"deepseek
 
 其他常用参数：`dsh_team_spawn({agentProvider, model, reasoningEffort, permissionPreset, agentPreset, contextMode})`；
 `dsh_team_task({dispatch:false})` 只建不派；`deps:[{from: taskId}]` 声明上游；
-`dsh_team_send({teamId, to: "writer"|"*"|"lead", message, interrupt?})` 给成员递话；成员正在跑时默认先打断当前回合再投递（`interrupt:false` 则不打断、等下个 step 边界：消息不会丢，但只能保证“读到”，不保证当前回合改道）；它只回执投递状态、不回成员答复——不要用 `sleep`/`Start-Sleep`/延迟脚本或轮询等回复，答复会作为后续回合的新消息异步到达；
+`dsh_team_send({teamId, to: "writer"|"*"|"lead", message, interrupt?})` 给成员递话；成员正在跑时默认先打断当前回合再投递（`interrupt:false` 则不打断、等下个 step 边界：消息不会丢，但只能保证“读到”，不保证当前回合改道）；**它是改道工具、不是催进度的工具**：成员在跑时不要用它问「到哪了 / 还要多久」或重发简报（见开头「Lead 的边界」）；它只回执投递状态、不回成员答复——不要用 `sleep`/`Start-Sleep`/延迟脚本或轮询等回复，答复会作为后续回合的新消息异步到达；
 `dsh_team_approve({teamId, requestId, decision:"allow"|"deny", reason})` 决定成员审批。
 `dsh_team_control({action, memberId, taskId})`：`interrupt` 停成员并把在途任务转 `paused`（不计重试）；
 `resume` 解冻；`assign` 把任务交给 idle 成员；`abort` 永久作废任务（`aborted`，不重试）。
@@ -221,7 +227,8 @@ dsh_team_spawn({ teamId, name:"architect", prompt:"...", agentProvider:"deepseek
 | `dsh_team_preset` save 报「已由宿主定义」 | id 与内置预设撞名 | 换 id；内置预设只读 |
 | `permissionPresetApplied: false` | 宿主没启用 permission-presets 服务 | 看 `permissionPresetWarning`；成员会按宿主默认权限运行，换团队预设或让用户开插件 |
 | `ops_bash` 启动报工作区缺 `WRITE_OWNER` | 成员是 `workspace-write`，但 Windows 工作区目录 ACL 不满足 bash 沙箱 provisioning；与 `agentPreset` 是否 `standard` 无关 | 运行中直接 `dsh_team_member({action:"update", permissionPreset:"danger-full-access"})` 临时绕过（无需 interrupt）；根因用 `diagnose-windows-sandbox-acl` 修 ACL |
-| 成员一直 `running` 不 done | 简报没让它调 `dsh_team_report_task`，或卡在审批 | 先看 `dsh_team_status` 的 blockers 与 `/api/approvals`；审批用 `dsh_team_approve`，否则补 `prompt` 后 `interrupt` → `resume` → `assign` 重派；确定不要了就 `abort` 作废 |
+| 成员跑很久仍 `running` | 简报没让它调 `dsh_team_report_task`，或卡在审批，或确实在跑长任务 | 先看 `dsh_team_status` 的 `seq`/`stale`/blockers 与 `/api/approvals`：`seq` 在涨说明它还在干活，**别动**；只有 `stale`、或超过 `agentStartTimeoutMs`（默认 120s）毫无进展，才补 `prompt` → `interrupt` → `resume` → `assign`；确定不要了就 `abort` |
+| 成员还在跑，Lead 反复 `dsh_team_send` 催「到哪了」/重发简报 | 默认会打断成员当前回合，催一次丢一次中间成果，并把它逼成提前交卷 | 挂起等 `dsh_team_report_task`；只有方向错了 / `blocked` / 报错才发一次，改道优先 `interrupt:false` |
 | `dsh_team_task` 建完没人接 | 成员全 busy/queued，或 `assignee` 用了 name | 省略 `assignee` 让调度器挑，或 `dsh_team_status` 看谁 idle |
 | 任务 `done` 但产物不对 | 成员看不到 Lead 的对话 | 简报自包含：目标文件、验收标准、不要假设它读过本对话；产物好坏交给用户判定，Lead 不自己返工复核 |
 | Lead 又去读 diff / 复跑 lint、测试「确认没问题」 | 做了二次验收，把用户的活抢了，还白烧一轮上下文 | 停手：只向用户转告改了什么、产物在哪、怎么验 |
@@ -231,6 +238,7 @@ dsh_team_spawn({ teamId, name:"architect", prompt:"...", agentProvider:"deepseek
 | 成员会话「failed before it finished」/ 回合报错 | provider 路由挂了 | 插件的派发监视会在 `agentStartTimeoutMs`（默认 120s）无活动后把任务交回重试；换模型重派 `dsh_team_control({action:"assign"})`，或 `dsh_team_spawn` 换一个成员 |
 | `dsh_team_dispatch` 报 `no_idle_agent` 但成员看起来 idle | 成员还挂着未收尾的 running 任务，或被指定 `assignee` 卡住 | 看返回的 `idleMembers` 与 `hint`；等一次心跳、`dsh_team_control({action:"resume"})` 或去掉 `assignee` 重派 |
 | `dsh_team_send` 后跑 `sleep`/延迟脚本等回复，白等还烧上下文 | 回执≠答复；答复是后续回合的新消息 | 发完就继续别的活或结束回合，不要轮询、不要重复 `dsh_team_status` |
+| Lead 在成员 `running` 时反复追问、刷 `dsh_team_status` 盯进度 | 「守着」不等于推进；每催一次都可能打断成员，`seq` 在涨就是在干活 | 派完就结束回合，Host 会在成员完成时拉起 Lead；汇报时才看一眼快照 |
 
 ## 5. 观察与收尾
 

@@ -2925,7 +2925,7 @@ function buildTools(s, ctx) {
 
   tools.push({
     name: 'dsh_team_status',
-    description: 'Read a live snapshot instead of guessing progress. detail=summary returns every member with status/step/seq/percent/next/blockers/stale and its permissionPreset; detail=dag returns the task DAG with dependencies, readiness, joins and the critical path. `asOf` marks the snapshot time.',
+    description: 'Read a live snapshot instead of guessing progress. detail=summary returns every member with status/step/seq/percent/next/blockers/stale and its permissionPreset; detail=dag returns the task DAG with dependencies, readiness, joins and the critical path. `asOf` marks the snapshot time. Read it once when reporting to the user; do not call it repeatedly to watch a running member — a rising `seq` already proves it is working, and the host wakes the Lead when it finishes.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -3001,7 +3001,7 @@ function buildTools(s, ctx) {
 
   tools.push({
     name: 'dsh_team_task',
-    description: 'Only for decomposing the CURRENT task: declare one task (DAG node) and hand it to a member. When the user asks for a new, separate task card (own deliverable or acceptance, own branch/session), use dsh_team_board_task_create instead — dsh_team_task items never appear on the board. The plan is a BRIEF sent to the member’s own sub-agent session, which does the work with its own tools and calls dsh_team_report_task when finished — write it self-contained (the member does not see this conversation). `assignee` takes a member **id** from dsh_team_spawn, not its name; omit it to let the scheduler pick an idle member. `deps[].from` takes a **task** id returned by an earlier dsh_team_task (member ids are rejected). The scheduler satisfies dependencies itself — never poll. The task dispatches immediately to an idle member once dependencies are satisfied; pass dispatch:false to build the DAG first.',
+    description: 'Only for decomposing the CURRENT task: declare one task (DAG node) and hand it to a member. When the user asks for a new, separate task card (own deliverable or acceptance, own branch/session), use dsh_team_board_task_create instead — dsh_team_task items never appear on the board. The plan is a BRIEF sent to the member’s own sub-agent session, which does the work with its own tools and calls dsh_team_report_task when finished — write it self-contained (the member does not see this conversation). `assignee` takes a member **id** from dsh_team_spawn, not its name; omit it to let the scheduler pick an idle member. `deps[].from` takes a **task** id returned by an earlier dsh_team_task (member ids are rejected). The scheduler satisfies dependencies itself — never poll. The task dispatches immediately to an idle member once dependencies are satisfied; pass dispatch:false to build the DAG first. Never create a duplicate task or re-send a brief just to nudge a member that is still running — wait for its dsh_team_report_task.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -3058,7 +3058,7 @@ function buildTools(s, ctx) {
 
   tools.push({
     name: 'dsh_team_send',
-    description: "Send a message that a member will actually read: the text is injected into the target sub-agent's message inbox. By default a running member's current turn is interrupted first, so the message immediately starts a fresh turn instead of waiting for the next step boundary; pass `interrupt: false` to keep the current turn and deliver at the next step boundary. An idle member is woken. `to` is a member NAME (member id also accepted) or '*' to broadcast; use to:'lead' to reply to the Lead. Every send is also recorded on the sidecar so the panel shows the conversation. Returns delivery status only, never the member's reply: the reply arrives asynchronously as a new message in a later turn. Never wait for it with sleep/Start-Sleep/delayed scripts, polling loops, or repeated dsh_team_status calls — after sending, continue independent work or end the turn.",
+    description: "Send a message that a member will actually read: the text is injected into the target sub-agent's message inbox. By default a running member's current turn is interrupted first, so the message immediately starts a fresh turn instead of waiting for the next step boundary; pass `interrupt: false` to keep the current turn and deliver at the next step boundary. An idle member is woken. `to` is a member NAME (member id also accepted) or '*' to broadcast; use to:'lead' to reply to the Lead. Every send is also recorded on the sidecar so the panel shows the conversation. Returns delivery status only, never the member's reply: the reply arrives asynchronously as a new message in a later turn. Never wait for it with sleep/Start-Sleep/delayed scripts, polling loops, or repeated dsh_team_status calls — after sending, continue independent work or end the turn. This is a REDIRECTION tool, not a progress-nudge tool: while a member is still running do NOT use it to ask how it is going, whether it is done, or to re-send the brief — the default interrupt discards its in-flight step and pushes it to wrap up early just to answer. Send once only when the member is blocked, reported an error, or you must correct a wrong direction (prefer interrupt:false for that), then end the turn.",
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -3067,7 +3067,7 @@ function buildTools(s, ctx) {
         to: { type: 'string', description: "Member name (agent teams) or member id, or '*' for broadcast." },
         message: { type: 'string', description: 'Message body.' },
         correlationId: { type: 'string', description: 'Optional correlation id to pair a request with its response.' },
-        interrupt: { type: 'boolean', description: 'Default true: if the target member is running, interrupt its current turn before delivering so this message takes effect immediately. false = keep the current turn and deliver at the next step boundary; the message is still queued durably and will be read (a pending steer forces another turn, an idle member is woken), but it may land only after the member finished the current step, so it cannot be relied on to change this turn.' },
+        interrupt: { type: 'boolean', description: 'Use true only when you must change an instruction mid-flight; never as a nudge. Default true: if the target member is running, interrupt its current turn before delivering so this message takes effect immediately. false = keep the current turn and deliver at the next step boundary; the message is still queued durably and will be read (a pending steer forces another turn, an idle member is woken), but it may land only after the member finished the current step, so it cannot be relied on to change this turn.' },
       },
       required: ['teamId', 'to', 'message'],
     },
@@ -3377,7 +3377,7 @@ function buildTools(s, ctx) {
 
   tools.push({
     name: 'dsh_team_dispatch',
-    description: 'Pump the agent-team dispatcher once: claim ready tasks for idle members and send each member its brief. Normally unnecessary — dsh_team_task dispatches automatically and dsh_team_report_task dispatches the next wave — but useful after dsh_team_control/resume, after approving a scope request, or when a member went idle without reporting. Safe to call repeatedly; it returns when no idle member or no ready task is left.',
+    description: 'Pump the agent-team dispatcher once: claim ready tasks for idle members and send each member its brief. Normally unnecessary — dsh_team_task dispatches automatically and dsh_team_report_task dispatches the next wave — but useful after dsh_team_control/resume, after approving a scope request, or when a member went idle without reporting. Safe to call repeatedly; it returns when no idle member or no ready task is left. It is a recovery pump, not a heartbeat: do not call it in a loop to watch a running member.',
     parameters: {
       type: 'object',
       additionalProperties: false,
