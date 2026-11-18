@@ -623,10 +623,10 @@ export class DshTeam {
           ...(task.assignee ? { wantedAssignee: task.assignee } : {}),
           idleMembers: idleTotal,
           hint: task.assignee
-            ? `任务指定了 assignee ${task.assignee}，但它现在不空闲；用 team_control({action:"assign"}) 换人或先让它收工`
+            ? `任务指定了 assignee ${task.assignee}，但它现在不空闲；用 dsh_team_control({action:"assign"}) 换人或先让它收工`
             : (idleTotal
-              ? '有 idle 成员但都被未收尾的 running 任务占着；等一次心跳或再调一次 team_dispatch'
-              : '团队里没有 idle 的 agent 成员：确认成员会话还活着（team_status），必要时 team_control resume 或补一个成员'),
+              ? '有 idle 成员但都被未收尾的 running 任务占着；等一次心跳或再调一次 dsh_team_dispatch'
+              : '团队里没有 idle 的 agent 成员：确认成员会话还活着（dsh_team_status），必要时 dsh_team_control resume 或补一个成员'),
         };
       }
       this.get("UPDATE task SET status='running', assignee=?, attempts=attempts+1, attempted_at=?, updated_at=? WHERE id=?")
@@ -644,8 +644,8 @@ export class DshTeam {
     // 自动泵（Host 侧 dispatchLoop）可能已经先认领了一波：running>0 时别说成「没有 ready 任务」，
     // 否则 Lead 会以为依赖写错了。
     const hint = settled
-      ? `任务刚建好，还在 ${this.scheduler.settleMs}ms 建图窗口里（ADR-005）；稍后重试或再调 team_dispatch 即可`
-      : (running ? `已有 ${running} 个任务在跑，等它们收工后会自动派发；用 team_status(detail:"dag") 看进度` : null);
+      ? `任务刚建好，还在 ${this.scheduler.settleMs}ms 建图窗口里（ADR-005）；稍后重试或再调 dsh_team_dispatch 即可`
+      : (running ? `已有 ${running} 个任务在跑，等它们收工后会自动派发；用 dsh_team_status(detail:"dag") 看进度` : null);
     return { dispatched: false, reason: 'no_ready_task', ...(running ? { running } : {}), ...(settled ? { settled } : {}), ...(hint ? { hint } : {}) };
   }
 
@@ -691,7 +691,7 @@ export class DshTeam {
     return { member: this.memberView(memberId), completed: false };
   }
 
-  /** 成员显式回报任务结果（team_report_task）：精确摘要 + 成败。 */
+  /** 成员显式回报任务结果（dsh_team_report_task）：精确摘要 + 成败。 */
   agentReport(memberId, body = {}) {
     const m = this.agentMember(memberId);
     this.assertSessionOwner(m, body.sessionId);

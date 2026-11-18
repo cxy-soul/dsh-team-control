@@ -182,7 +182,7 @@ Activity，它们也要接真实数据」。此前 home 整屏是 `AgentRun`（�
      事件 `phase=step, action=task.todo, target="done/total done"` 用于 SSE 刷新。事件流按成员分片，
      **未派发任务写入时跳过事件**（归属不到成员，不能因此 400），任务被派发时由 `task.state` 触发刷新；
    - `src/server.mjs`：`POST /api/tasks/:id/todos`、`GET /api/todos?task=`；
-   - `dsh-plugin/index.js`：新增 `team_todo(teamId, taskId, items[{title,status,blockedBy?}], by?)`，
+   - `dsh-plugin/index.js`：新增 `dsh_team_todo(teamId, taskId, items[{title,status,blockedBy?}], by?)`，
      与内置 `todo_write`（只在会话内、落不到面板）区分，`by` 记录写入者（默认 `lead`）。
 3. **收件箱的四个动作全部接真实数据**（组件在任一回调缺失时会本地假动作，因此必须全传）：
    `waiting`（来自 pending scopeRequest）→ Approve/Reject 走 `decideScope`；`failed`（DAG 失败节点）

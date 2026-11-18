@@ -1,5 +1,5 @@
 // tests/plugin-teamid-guard.mjs — teamId 缺失/无效时插件必须显式报错
-// 回归（2026-10-31 实测）：模型生成的 team_spawn 调用漏了必填的 teamId，
+// 回归（2026-10-31 实测）：模型生成的 dsh_team_spawn 调用漏了必填的 teamId，
 // 旧实现把 undefined 拼进 URL → GET /api/teams/undefined 404 被 catch 静默回退 worker
 // → POST /api/teams/undefined/members 才爆 `team not found`，看不出「参数缺失」这个根因。
 import assert from 'node:assert/strict';
@@ -8,7 +8,7 @@ import { apply } from '../dsh-plugin/index.js';
 
 const mkFakeCtx = (opts = {}) => {
   const tools = new Map();
-  // 有 subagents 时 team_spawn 才能走完 startActivation → /api/agents/register；用于验证
+  // 有 subagents 时 dsh_team_spawn 才能走完 startActivation → /api/agents/register；用于验证
   // 省略 teamId 时 register 用的是解析后的 team.id，而不是原始 undefined。
   const agents = opts.subagents ? {
     spawned: [],
@@ -54,8 +54,8 @@ const main = async () => {
       reportToolCalls: false, reportChanges: false, reportLlmCalls: false, reportContext: false,
       reportWorkspaces: false, reportLlmCatalog: false, agentAutoDispatch: false,
     });
-    const spawn = fake.tools.get('team_spawn');
-    assert.equal(typeof spawn?.execute, 'function', 'team_spawn 已注册');
+    const spawn = fake.tools.get('dsh_team_spawn');
+    assert.equal(typeof spawn?.execute, 'function', 'dsh_team_spawn 已注册');
 
     // ① 完全没传 teamId：明确提示缺参数，而不是报「team not found」
     await rejects(spawn.execute({ name: 'a', description: 'd' }, {}), /缺少 teamId/, '缺 teamId 报参数缺失');
@@ -69,20 +69,20 @@ const main = async () => {
       /团队不存在或 teamId 无效: team_nope/, '404 明确报团队不存在');
     assert.equal((await sidecar.api.get(`/api/teams/${team.id}/members`)).items.length, 0, '失败的调用没有往真实团队里建成员');
 
-    // ③b 同会话 team_create 后漏传 teamId：自动落到该会话刚建的团队，不再报「缺少 teamId」
-    const create = fake.tools.get('team_create');
+    // ③b 同会话 dsh_team_create 后漏传 teamId：自动落到该会话刚建的团队，不再报「缺少 teamId」
+    const create = fake.tools.get('dsh_team_create');
     const created = await create.execute(
       { name: 'plugin-teamid-bound', workspace: tmp.ws },
       { agent: { id: 'sess-teamid-bound' } },
     );
-    assert.match(created.team.id, /^team_/, 'team_create 返回团队 id');
+    assert.match(created.team.id, /^team_/, 'dsh_team_create 返回团队 id');
     await rejects(
       spawn.execute({ name: 'auto', prompt: '你是 auto。' }, { agent: { id: 'sess-teamid-bound' } }),
       /subagents 服务不可用/,
       '漏传 teamId 时回落到会话绑定的团队',
     );
 
-    // ③c 同会话 team_create 后漏传 teamId，且宿主有 subagents：
+    // ③c 同会话 dsh_team_create 后漏传 teamId，且宿主有 subagents：
     //     注册必须落到解析出的团队，不能把 undefined 发给 /api/agents/register 变成 400。
     const bound = mkFakeCtx({ subagents: true });
     apply(bound.ctx, {
@@ -91,11 +91,11 @@ const main = async () => {
       reportWorkspaces: false, reportLlmCatalog: false, agentAutoDispatch: false,
     });
     const boundLead = { agent: { id: 'sess-teamid-bound-agent' } };
-    const boundTeam = (await bound.ctx.tools.get('team_create').execute(
+    const boundTeam = (await bound.ctx.tools.get('dsh_team_create').execute(
       { name: 'plugin-teamid-bound-agent', workspace: tmp.ws },
       boundLead,
     )).team;
-    const auto = await bound.ctx.tools.get('team_spawn').execute(
+    const auto = await bound.ctx.tools.get('dsh_team_spawn').execute(
       { name: 'auto-agent', prompt: '你是 auto-agent。' },
       boundLead,
     );

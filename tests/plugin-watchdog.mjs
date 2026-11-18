@@ -62,14 +62,14 @@ const main = async () => {
     };
     const lead = { agent: { id: 'sess-lead' } };
 
-    const team = (await tool('team_create').execute({ name: 'watchdog', workspace: tmp.ws, runtime: 'agent', maxAttempts: 3 }, lead)).team;
-    const spawned = await tool('team_spawn').execute(
+    const team = (await tool('dsh_team_create').execute({ name: 'watchdog', workspace: tmp.ws, runtime: 'agent', maxAttempts: 3 }, lead)).team;
+    const spawned = await tool('dsh_team_spawn').execute(
       { teamId: team.id, name: 'alice', role: 'writer', prompt: '你是 alice。' }, lead,
     );
     const sessionId = spawned.member.agentSessionId;
     assert(sessionId, '成员绑定会话');
 
-    const created = await tool('team_task').execute({ teamId: team.id, subject: '写一段话', plan: [] }, lead);
+    const created = await tool('dsh_team_task').execute({ teamId: team.id, subject: '写一段话', plan: [] }, lead);
     const taskId = created.task?.id || created.taskId;
     assert(taskId, '任务已创建');
 

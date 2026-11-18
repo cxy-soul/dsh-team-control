@@ -1,4 +1,4 @@
-// tests/todo-plan.mjs — 任务级计划清单（todo.task_id）与 team_todo 的 REST 层
+// tests/todo-plan.mjs — 任务级计划清单（todo.task_id）与 dsh_team_todo 的 REST 层
 // 断言：① 未派发任务也能写计划（事件流按成员分片，归属不到成员时跳过事件而不是 400）；
 //       ② POST /api/tasks/:id/todos 落盘并带 task_id、orderNo 按顺序；GET ?task= 只返回该任务；
 //       ③ 再次 POST 是「整体替换」（旧行删除）；④ 校验（>50 条 / 空标题 / 非法 status / 未知任务）；

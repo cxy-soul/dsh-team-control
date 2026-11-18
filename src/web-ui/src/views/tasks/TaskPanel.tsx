@@ -346,7 +346,7 @@ export function TaskPanel({
               </Group>
             ) : (
               <p className="mt-1 text-xs text-muted-foreground">
-                尚未关联团队；执行阶段调用 team_create 后会自动绑定。
+                尚未关联团队；执行阶段调用 dsh_team_create 后会自动绑定。
               </p>
             )}
           </div>

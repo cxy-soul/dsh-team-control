@@ -38,15 +38,15 @@ const main = async () => {
       reportToolCalls: false, reportChanges: false, reportLlmCalls: false, reportContext: false,
       reportWorkspaces: false, reportLlmCatalog: false, agentAutoDispatch: false,
     });
-    for (const name of ['team_memory_write', 'team_memory_read', 'team_memory_list', 'team_memory_share', 'team_memory_delete']) {
+    for (const name of ['dsh_team_memory_write', 'dsh_team_memory_read', 'dsh_team_memory_list', 'dsh_team_memory_share', 'dsh_team_memory_delete']) {
       assert.equal(typeof fake.tools.get(name)?.execute, 'function', `${name} 已注册`);
     }
 
-    const write = fake.tools.get('team_memory_write');
-    const read = fake.tools.get('team_memory_read');
-    const list = fake.tools.get('team_memory_list');
-    const share = fake.tools.get('team_memory_share');
-    const del = fake.tools.get('team_memory_delete');
+    const write = fake.tools.get('dsh_team_memory_write');
+    const read = fake.tools.get('dsh_team_memory_read');
+    const list = fake.tools.get('dsh_team_memory_list');
+    const share = fake.tools.get('dsh_team_memory_share');
+    const del = fake.tools.get('dsh_team_memory_delete');
 
     // ① Lead/面板写团队空间
     const t = await write.execute({ teamId: teamA.id, scope: 'team', key: 'handoff/brief', value: '团队结论', kind: 'handoff' }, {});

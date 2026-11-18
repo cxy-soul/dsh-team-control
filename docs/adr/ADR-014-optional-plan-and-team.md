@@ -7,7 +7,7 @@
 ## 背景
 
 原看板任务固定走 `todo → planning → planned → inprogress`，执行阶段固定按 Agent Team 编排
-（要求先加载 `dsh-agent-team`、产出「团队与成员建议」、用 `team_task` 派发）。实际使用中两类需求变多：
+（要求先加载 `dsh-agent-team`、产出「团队与成员建议」、用 `dsh_team_task` 派发）。实际使用中两类需求变多：
 
 1. 小改动不需要单独规划一轮，直接执行更省时省额度；
 2. 单人就能完成的任务不需要建团队，但执行提示词仍在要求建队、加载团队技能，模型容易照着做。
@@ -22,7 +22,7 @@
   - `need_plan=1`：保持 `todo → planning → planned → inprogress`；
     `need_plan=0`：跳过 planning，`todo` 在 inprogress 槽位空出后直接被 claim 执行。
   - `use_team=1`：规划/执行提示词保持原团队编排内容；`use_team=0`：提示词改为单人执行，
-    明确禁止 `team_create` / `team_spawn` / `team_task`，也不再要求加载 `dsh-agent-team` 技能。
+    明确禁止 `dsh_team_create` / `dsh_team_spawn` / `dsh_team_task`，也不再要求加载 `dsh-agent-team` 技能。
 - **claim 条件集中写在 sidecar**：planning 只 claim `need_plan=1` 的 `todo`；inprogress 接受
   `status='planned'`，或 `need_plan=0 AND status='todo' AND auto=1`。插件不新增分支，只按
   claim 到的 `status` 决定投规划还是执行 prompt。

@@ -1,13 +1,13 @@
 # 文件地图
 
-> **v2 变更（2026-11）**：worker 运行时与四域 broker 已移除；成员一律是真 sub-agent，权限由 DSH 权限预设按成员分配，成员审批经 `team_approve` 转发给 Lead。下文涉及 `worker` / `broker` / `policy` / `scope` 的段落为历史记录，以 [CONTRACT.md](../docs/CONTRACT.md) 与 [README](../README.md) 为准。
+> **v2 变更（2026-11）**：worker 运行时与四域 broker 已移除；成员一律是真 sub-agent，权限由 DSH 权限预设按成员分配，成员审批经 `dsh_team_approve` 转发给 Lead。下文涉及 `worker` / `broker` / `policy` / `scope` 的段落为历史记录，以 [CONTRACT.md](../docs/CONTRACT.md) 与 [README](../README.md) 为准。
 
 ```text
 dsh-team-control/
 ├── CLAUDE.md                 本索引
 ├── AGENTS.md                 仓库级 Agent 约定（中文输出、最小改动等）
 ├── README.md                 对外说明（安装、CLI、五条硬约束、限制）
-├── package.json              dsh-team-control v0.2.0，bin.dsh-team，engines >=22.15
+├── package.json              dsh-team-control-cli v0.3.0，bin.dsh-team，engines >=22.15
 ├── bin/
 │   └── dsh-team.mjs          205 行 CLI：up/down/status/dag/logs/approvals/report
 ├── src/                      编排内核
@@ -24,7 +24,7 @@ dsh-team-control/
 │   ├── web/                  面板构建产物（只提交 panel.html + 2 个 assets）
 │   └── web-ui/               面板源码（见 src/web-ui/CLAUDE.md）
 ├── dsh-plugin/               Host 插件
-│   ├── index.js              4276 行 20 个 team_* + 4 个 board_* 工具 + 生命周期 + 上报泵
+│   ├── index.js              4276 行 20 个 team_* + 4 个 dsh_team_board_* 工具 + 生命周期 + 上报泵
 │   ├── changes.js            168 行 文件改动 diff（FILE_TOOLS 白名单）
 │   ├── pricing.js            165 行 峰值时段计价
 │   ├── cordis.patch.yml      插件插入配置

@@ -10,9 +10,9 @@
 
 1. 规划会话被用户手动停止后，idle 宽限（`boardIdleGraceMs`）把任务判 `failed`；用户继续会话时
    `user/message` 又把任务翻成 `inprogress`，而 `submitPlan` 只认 `planning`，提交计划报 404。
-2. `team_approve` 噪声大：审批几乎全部来自成员跑 `npm test`、`git status` 这类普通命令时的沙箱升级，
+2. `dsh_team_approve` 噪声大：审批几乎全部来自成员跑 `npm test`、`git status` 这类普通命令时的沙箱升级，
    Lead 被反复打断。
-3. 成员运行中想调整权限，`team_member` 直接要求先 `interrupt`，打断正在进行的回合。
+3. 成员运行中想调整权限，`dsh_team_member` 直接要求先 `interrupt`，打断正在进行的回合。
 
 ## 决策
 
@@ -27,7 +27,7 @@
 - **工具级白名单**（2026-11-13 修订）：新增 `autoApproveTools`（默认 `[]`，支持 `*` 通配）。命中工具名的
   审批不依赖参数直接放行，用于只读 MCP 发现/状态类工具；同时低风险命令判定允许只读管道
   （`git status | head`、`Get-ChildItem | Select-Object`），每段仍按程序白名单校验。
-- **运行中热改权限**：`team_member({action:"update"})` 在成员 `running/provisioning/blocked` 时允许只改
+- **运行中热改权限**：`dsh_team_member({action:"update"})` 在成员 `running/provisioning/blocked` 时允许只改
   `role` / `permissionPreset`；sidecar 放行 hot-only PATCH，插件对 live session 直接
   `permissionPresets.set`。换模型/上下文/组合仍要求先 `interrupt`。
 

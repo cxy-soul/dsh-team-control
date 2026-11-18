@@ -6,7 +6,7 @@ dsh-team-control 给 DeepSeek Harness（DSH）的 Agent Team 加一层**独立�
 
 工程形态是**零依赖、零构建**的 Node ESM 后端（`engines.node >= 22.15`，实测 v24.22；依赖 `node:sqlite` 与 `module.registerHooks`），加一个 React 19 + Tailwind v4 + Vite 的面板前端（源码 `src/web-ui/`，构建产物落到 `src/web/` 由 sidecar 托管）。验收脚本全部是真实子进程 + 真实 HTTP/SSE，不 mock sidecar。
 
-成员一律是**真 DSH sub-agent session**，由 Host 插件用 `subagents.startActivation` 拉起；sidecar 负责任务/DAG/审批镜像/看板/审计，不做进程与 IO 管理。成员的沙箱由 DSH 权限预设按成员分配，成员审批经 `team_approve` 转发给 Lead。
+成员一律是**真 DSH sub-agent session**，由 Host 插件用 `subagents.startActivation` 拉起；sidecar 负责任务/DAG/审批镜像/看板/审计，不做进程与 IO 管理。成员的沙箱由 DSH 权限预设按成员分配，成员审批经 `dsh_team_approve` 转发给 Lead。
 
 ## 约定的规则
 
@@ -27,7 +27,7 @@ dsh-team-control 给 DeepSeek Harness（DSH）的 Agent Team 加一层**独立�
 | [开发约定](claude/conventions.md) | 命令、风格、禁止事项、兼容性提醒 | 动手前后各看一次 |
 | [模块职责](claude/module-responsibilities.md) | 各模块边界与所有权 | 判断改动该落在哪个目录 |
 | [入口与启动](claude/entrypoints.md) | CLI / sidecar / 插件 / 面板的启动链路 | 排查「起不来」「没端口」 |
-| [对外接口](claude/public-interfaces.md) | REST、SSE、CLI、20 个 `team_*` + 4 个 `board_*` 工具 | 加接口或改契约 |
+| [对外接口](claude/public-interfaces.md) | REST、SSE、CLI、20 个 `dsh_team_*` + 4 个 `dsh_team_board_*` 工具 | 加接口或改契约 |
 | [依赖与配置](claude/dependencies-and-config.md) | Node 版本、环境变量、插件 config 字段 | 换机器、改端口/数据目录 |
 | [数据模型](claude/data-model.md) | SQLite schema v21、枚举、事件溯源 | 改表、改状态机 |
 | [测试与质量](claude/testing-and-quality.md) | AC 脚本矩阵（AC-01~19）、harness、演示 | 加测试或复现 bug |
@@ -40,7 +40,7 @@ dsh-team-control 给 DeepSeek Harness（DSH）的 Agent Team 加一层**独立�
 ```mermaid
 graph LR
   Lead[Lead Agent] -->|REST / CLI / SSE| SC[sidecar src/ + bin/]
-  Lead -->|team_* 工具| HP[dsh-plugin]
+  Lead -->|dsh_team_* 工具| HP[dsh-plugin]
   HP -->|spawn / HTTP| SC
   HP -->|subagents.startActivation| AG[DSH 子会话成员]
   SC -->|静态 + SSE| UI[面板 src/web]
@@ -52,7 +52,7 @@ graph LR
 |---|---|---|---|
 | 编排内核 | `src/` | 组合根、SQLite、事件流、审批镜像、调度器、信箱、SSE、HTTP 服务 | [src/CLAUDE.md](src/CLAUDE.md) |
 | CLI | `bin/dsh-team.mjs` | `up/down/status/dag/logs/approvals/report`，通过 `run/sidecar.json` 发现端口 | 见 [入口与启动](claude/entrypoints.md) |
-| Host 插件 | `dsh-plugin/` | 20 个 `team_*` 工具（含 `team_approve` 与 5 个 `team_memory_*`）+ 4 个 `board_*` 工具、sidecar 生命周期、成员派发与权限预设下发、审批转发、trace/改动/产物上报 | [dsh-plugin/CLAUDE.md](dsh-plugin/CLAUDE.md) |
+| Host 插件 | `dsh-plugin/` | 20 个 `dsh_team_*` 工具（含 `dsh_team_approve` 与 5 个 `dsh_team_memory_*`）+ 4 个 `dsh_team_board_*` 工具、sidecar 生命周期、成员派发与权限预设下发、审批转发、trace/改动/产物上报 | [dsh-plugin/CLAUDE.md](dsh-plugin/CLAUDE.md) |
 | GUI 面板插件 | `dsh-plugin-ui/` | 把面板挂成 better-sidebar 页签/侧栏入口，同源代理到 sidecar | [dsh-plugin-ui/CLAUDE.md](dsh-plugin-ui/CLAUDE.md) |
 | 面板前端 | `src/web-ui/` | React + coss ui 面板源码，构建到 `src/web/` | [src/web-ui/CLAUDE.md](src/web-ui/CLAUDE.md) |
 | 验收脚本 | `tests/` | AC-01~AC-19 + 插件/面板/路由/CLI/迁移脚本，真 sidecar + 假 ctx | [tests/CLAUDE.md](tests/CLAUDE.md) |

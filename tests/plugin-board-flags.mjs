@@ -108,8 +108,8 @@ const main = async () => {
       agentAutoDispatch: false, boardDispatchMs: 200, boardIdleGraceMs: 800,
     });
 
-    const statusTool = ctx.tools.get('board_task_status');
-    const planTool = ctx.tools.get('board_plan_submit');
+    const statusTool = ctx.tools.get('dsh_team_board_task_status');
+    const planTool = ctx.tools.get('dsh_team_board_plan_submit');
 
     // 1) needPlan=false：不建规划会话，直接进入执行，prompt 不含规划/团队内容
     const solo = await api.post('/api/board/tasks', {
@@ -145,7 +145,7 @@ const main = async () => {
     await planTool.execute({ plan: 'PLAN_SOLO_MARKER', summary: '一句话' }, { agent: { id: planRec.agent.id } });
     assert.equal((await api.get(`/api/board/tasks/${soloPlan.id}`)).status, 'inprogress', '提交计划即进入执行槽位');
     assert.equal(planRec.followups.length, 1, '同会话不再补发执行 prompt');
-    assert.match(planText, /board_task_status/, '同会话规划 prompt 自带收尾规则');
+    assert.match(planText, /dsh_team_board_task_status/, '同会话规划 prompt 自带收尾规则');
     assert.equal(permissions.filter((p) => p.sessionId === planRec.agent.id).at(-1)?.name, 'danger-full-access', '执行切到 danger-full-access');
     await statusTool.execute({ status: 'done', summary: '完成' }, { agent: { id: planRec.agent.id } });
 
@@ -182,8 +182,8 @@ const main = async () => {
     assert.match(text(newSoloLead), /已确认的计划/, '新会话单人执行仍带计划');
     assert.match(text(newSoloLead), /不开启团队/, '新会话单人不开启团队');
     assert.doesNotMatch(text(newSoloLead), /dsh-agent-team/, '新会话单人不加载技能');
-    assert.match(text(newSoloLead), /不要调用 team_create/, '新会话单人禁止建队');
-    assert.doesNotMatch(text(newSoloLead), /用 team_task 拆解/, '新会话单人不派发团队任务');
+    assert.match(text(newSoloLead), /不要调用 dsh_team_create/, '新会话单人禁止建队');
+    assert.doesNotMatch(text(newSoloLead), /用 dsh_team_task 拆解/, '新会话单人不派发团队任务');
     await statusTool.execute({ status: 'done', summary: '完成' }, { agent: { id: newSoloLead.agent.id } });
 
     // 5) prewalk（实验性）：提交计划只武装、不切模型；首个 edit 结果之后才交接并注入执行清单

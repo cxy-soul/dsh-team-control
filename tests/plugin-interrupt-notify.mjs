@@ -69,15 +69,15 @@ const main = async () => {
     };
     const lead = { agent: { id: 'sess-lead' } };
 
-    const team = (await tool('team_create').execute({ name: 'notify', workspace: tmp.ws, runtime: 'agent', maxAttempts: 2 }, lead)).team;
-    const spawned = await tool('team_spawn').execute(
+    const team = (await tool('dsh_team_create').execute({ name: 'notify', workspace: tmp.ws, runtime: 'agent', maxAttempts: 2 }, lead)).team;
+    const spawned = await tool('dsh_team_spawn').execute(
       { teamId: team.id, name: 'alice', role: 'writer', prompt: '你是 alice。' }, lead,
     );
     const sessionId = String(spawned.member.agentSessionId);
     assert(sessionId, '成员绑定会话');
     memberAgents.set(sessionId, { id: sessionId });
 
-    const created = await tool('team_task').execute({ teamId: team.id, subject: '写一段话', plan: [] }, lead);
+    const created = await tool('dsh_team_task').execute({ teamId: team.id, subject: '写一段话', plan: [] }, lead);
     const taskId = created.task?.id || created.taskId;
     assert(taskId, '任务已创建');
     await waitFor('任务被派发（running）', async () => {
@@ -105,8 +105,8 @@ const main = async () => {
     assert.equal(leadNotes().length, before, '同一个中断不重复通知');
 
     // 另一条中断路径：成员回合以 error 结束（模型路由报错/上游超时）也要通知 Lead
-    const team2 = (await tool('team_create').execute({ name: 'notify2', workspace: tmp.ws, runtime: 'agent' }, lead)).team;
-    const spawned2 = await tool('team_spawn').execute(
+    const team2 = (await tool('dsh_team_create').execute({ name: 'notify2', workspace: tmp.ws, runtime: 'agent' }, lead)).team;
+    const spawned2 = await tool('dsh_team_spawn').execute(
       { teamId: team2.id, name: 'bob', role: 'writer', prompt: '你是 bob。' }, lead,
     );
     const sessionId2 = String(spawned2.member.agentSessionId);

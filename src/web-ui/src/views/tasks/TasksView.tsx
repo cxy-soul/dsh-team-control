@@ -208,7 +208,7 @@ export function TasksView({ workspaceId: workspaceIdProp, standalone = false }: 
     void run(`${task.id}:reset`, () => boardApi.reset(task.id), '已重置为待办');
   };
 
-  /** 手动兜底：Lead 忘记调用 board_task_status 时，由用户把任务直接标记完成。 */
+  /** 手动兜底：Lead 忘记调用 dsh_team_board_task_status 时，由用户把任务直接标记完成。 */
   const complete = (task: BoardTask) => {
     void run(`${task.id}:complete`, () => boardApi.complete(task.id), '已标记完成');
   };

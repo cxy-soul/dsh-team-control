@@ -1,6 +1,6 @@
 # 入口与启动
 
-> **v2 变更（2026-11）**：worker 运行时与四域 broker 已移除；成员一律是真 sub-agent，权限由 DSH 权限预设按成员分配，成员审批经 `team_approve` 转发给 Lead。下文涉及 `worker` / `broker` / `policy` / `scope` 的段落为历史记录，以 [CONTRACT.md](../docs/CONTRACT.md) 与 [README](../README.md) 为准。
+> **v2 变更（2026-11）**：worker 运行时与四域 broker 已移除；成员一律是真 sub-agent，权限由 DSH 权限预设按成员分配，成员审批经 `dsh_team_approve` 转发给 Lead。下文涉及 `worker` / `broker` / `policy` / `scope` 的段落为历史记录，以 [CONTRACT.md](../docs/CONTRACT.md) 与 [README](../README.md) 为准。
 
 ## 1. sidecar：`bin/dsh-team.mjs up`
 
@@ -44,7 +44,7 @@ openDb → EventStore(db) → Bus(db, events)
 ```text
 apply(ctx, config)
   ├ resolveConfig(config) → baseUrl/port/home/autoStart/entry/...
-  ├ ctx.effect(...) 注册 20 个 team_* + 4 个 board_* 工具
+  ├ ctx.effect(...) 注册 20 个 team_* + 4 个 dsh_team_board_* 工具
   ├ ctx.inject(['skills']) 注册 skills provider（rank 600，读 skills/ 目录）
   ├ ensureSidecar()：autoStart 时 spawn `bin/dsh-team.mjs up`，等 ready 行（startTimeoutMs 20s）
   ├ 事件钩子：

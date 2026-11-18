@@ -2,18 +2,22 @@
 
 > 只记录索引/文档的生成与更新，不记录产品 Changelog。倒序，最多 5 条。
 
+## 2026-11-18 · v0.3.0 工具名统一 dsh_team_* 前缀
+
+- 24 个工具改名且不保留旧名：`team_*` → `dsh_team_*`，`board_*` → `dsh_team_board_*`（如 `team_create` → `dsh_team_create`、`board_task_create` → `dsh_team_board_task_create`）。插件描述、sidecar 提示词、面板、`skills/dsh-agent-team/SKILL.md`、tests 与活跃文档同步；三个包（cli / plugin / ui）统一升 0.3.0。
+
 ## 2026-11-15 · schema v21 / 停止团队与停止看板任务都停会话 / 新任务归属判断
 
 - schema v21：`board_task.stop_requested_at`；看板停止任务时 `boardPump` 按时间戳取消 Lead/规划会话的当前回合（solo 任务没有团队也能停），`live` 额外带出规划期停止的任务。面板任务详情显示「已于 … 停止」。
 - schema v20：`team.stop_requested_at`；`POST /api/teams/:id/stop` 记录停止时间，`GET /api/status` 增加 `teams`（`id`/`leadSessionId`/`stopRequestedAt`），Host 插件 `forceStopPump` 按时间戳去重后对 Lead 会话 `agent.cancel({kind:'user'})`。新增 `tests/plugin-stop-lead.mjs`。
-- `boardLeadRules` 增加「新任务归属判断」：交付物/验收不同或需独立分支 → `board_task_create`，用户明说建卡/单开会话时禁止 `team_task`；`team_task` 与 `board_task_create` 描述互斥，`SKILL.md` 补 3.1 节。
-- `board_task_create` 对未注册 `workspaceId` 先按 `workspacePath` 改挂，改挂不了直接报错不落库；`src/board.mjs` 服务端同样按路径兜底。
+- `boardLeadRules` 增加「新任务归属判断」：交付物/验收不同或需独立分支 → `dsh_team_board_task_create`，用户明说建卡/单开会话时禁止 `dsh_team_task`；`dsh_team_task` 与 `dsh_team_board_task_create` 描述互斥，`SKILL.md` 补 3.1 节。
+- `dsh_team_board_task_create` 对未注册 `workspaceId` 先按 `workspacePath` 改挂，改挂不了直接报错不落库；`src/board.mjs` 服务端同样按路径兜底。
 
 ## 2026-11-13 · 厂商备注 / git 分支 / agent 侧任务工具
 
-- schema v19：`llm_provider.note`（厂商级备注，与 `llm_route.note` 分表，目录同步只更新 name/source/error 不覆盖）、`board_task.git_branch`；新增 `PATCH /api/llm/providers`，`GET /api/llm/catalog` 的 provider 带 `note`；`team_models` 每个模型附带 `providerNote`。面板模型路由页在厂商分组头加厂商备注输入（例如 gpt 适合逻辑处理 / claude 适合做设计）。
+- schema v19：`llm_provider.note`（厂商级备注，与 `llm_route.note` 分表，目录同步只更新 name/source/error 不覆盖）、`board_task.git_branch`；新增 `PATCH /api/llm/providers`，`GET /api/llm/catalog` 的 provider 带 `note`；`dsh_team_models` 每个模型附带 `providerNote`。面板模型路由页在厂商分组头加厂商备注输入（例如 gpt 适合逻辑处理 / claude 适合做设计）。
 - 看板任务可指定 git 分支：`gitBranch: ''` 自动生成 `task/<任务短号>`；插件在 spawn 会话前 `rev-parse --is-inside-work-tree` → 已在目标分支跳过 → 存在则 checkout，否则 `checkout -b`，并把「git 分支：xxx（已切好）」注入规划/执行 prompt；非 git 仓库、无 git 或切换失败只告警降级，不阻断任务。新建/编辑对话框加「开始前切到独立 git 分支」开关 + 分支名，TaskPanel 展示分支。
-- 插件新增 3 个工具（共 20 个 `team_*` + 4 个 `board_*`）：`team_task_get`（单任务状态 + DAG 节点）、`board_task_create`（成员/Lead 直接在会话里建看板任务，workspaceId 可反查）、`board_task_get`（按 id 或当前会话取看板任务）。
+- 插件新增 3 个工具（共 20 个 `team_*` + 4 个 `board_*`）：`dsh_team_task_get`（单任务状态 + DAG 节点）、`dsh_team_board_task_create`（成员/Lead 直接在会话里建看板任务，workspaceId 可反查）、`dsh_team_board_task_get`（按 id 或当前会话取看板任务）。
 - 文档：`docs/CONTRACT.md`、`claude/public-interfaces.md`、`claude/data-model.md`、根 `CLAUDE.md`、`skills/dsh-agent-team/SKILL.md` 同步；新增测试 `tests/llm-provider-note.mjs`、`tests/board-git-branch.mjs`、`tests/plugin-board-agent-tools.mjs`。
 
 ## 2026-11-11 · 构建产物与历史清理

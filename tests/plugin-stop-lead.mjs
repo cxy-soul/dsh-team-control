@@ -75,14 +75,14 @@ const main = async () => {
     const leadAgent = fakeLead({ id: 'sess-lead' });
     liveAgents.set('sess-lead', leadAgent);
 
-    const team = (await tool('team_create').execute({ name: 'stop-lead', workspace: tmp.ws, maxAttempts: 2 }, lead)).team;
+    const team = (await tool('dsh_team_create').execute({ name: 'stop-lead', workspace: tmp.ws, maxAttempts: 2 }, lead)).team;
     assert.equal(team.leadSessionId, 'sess-lead', '团队记录了 Lead 会话');
 
     // 让团队里有一个 running 成员，贴近「用户在成员干活时点停止」的现场。
-    const spawned = await tool('team_spawn').execute(
+    const spawned = await tool('dsh_team_spawn').execute(
       { teamId: team.id, name: 'alice', role: 'writer', prompt: '你是 alice。' }, lead,
     );
-    const created = await tool('team_task').execute({ teamId: team.id, subject: '写一段话', plan: [] }, lead);
+    const created = await tool('dsh_team_task').execute({ teamId: team.id, subject: '写一段话', plan: [] }, lead);
     const taskId = created.task?.id || created.taskId;
     await waitFor('任务被派发（running）', async () => {
       const t = await api.get(`/api/tasks/${taskId}`);
@@ -115,7 +115,7 @@ const main = async () => {
     // Lead 本来空闲：没有可取消的回合，不应误伤
     const lead2 = fakeLead({ id: 'sess-lead-2', status: 'idle' });
     liveAgents.set('sess-lead-2', lead2);
-    const team2 = (await tool('team_create').execute({ name: 'stop-lead-idle', workspace: tmp.ws }, { agent: { id: 'sess-lead-2' } })).team;
+    const team2 = (await tool('dsh_team_create').execute({ name: 'stop-lead-idle', workspace: tmp.ws }, { agent: { id: 'sess-lead-2' } })).team;
     await api.post(`/api/teams/${team2.id}/stop`, { reason: 'panel stop idle' });
     await sleep(600);
     assert.equal(lead2.cancels.length, 0, 'Lead 空闲时不取消');

@@ -14,11 +14,11 @@
 ```
 Host 插件 ctx.agents.create({sessionId, meta.cwd, agentOptions, setup})
   → agent.followup(规划 prompt)
-  → 模型规划，调用 board_plan_submit
+  → 模型规划，调用 dsh_team_board_plan_submit
   → 任务进入 planned（不关会话）
   → 等 inprogress 槽位空出，向同一会话 followup(执行 prompt)
-  → 模型调用本仓库已注册的 team_* 工具
-  → team_create 用 exec.agent 作为 Lead，成员走 subagents.startActivation
+  → 模型调用本仓库已注册的 dsh_team_* 工具
+  → dsh_team_create 用 exec.agent 作为 Lead，成员走 subagents.startActivation
 ```
 
 但有一个**不可绕过的架构约束**：
@@ -39,12 +39,12 @@ Host 插件 ctx.agents.create({sessionId, meta.cwd, agentOptions, setup})
 | 每个工作区一个看板 | 已有 `workspace` 表与 Host 同步（`dsh-plugin/index.js:463`）；面板已有工作区切换器 `src/web-ui/src/components/WorkspaceSelect.tsx` | 缺 workspace 级看板数据与视图 |
 | 列：todo / planning / inprogress / done / failed | 已有「成员看板」，但那是成员运行态，不是任务 | 新增「任务看板」页签，避免与成员看板重名 |
 | task 里可包含多个 team | 已有 `team.lead_session_id`、`/api/teams/for-session` | 缺 task ↔ team 多对多绑定与展示 |
-| todo 加任务后自动排队 | 现有 `task` 是 team 内 DAG 节点；`todo` 是成员清单 | 现有两张表都不能复用，必须新建 `board_*` |
+| todo 加任务后自动排队 | 现有 `task` 是 team 内 DAG 节点；`todo` 是成员清单 | 现有两张表都不能复用，必须新建 `dsh_team_board_*` |
 | planning 并发可配，默认 1 | 无 | 新增 board settings 与原子 claim |
 | 规划完成后自动进 inprogress，并发可配，默认 1 | 无 | 新增状态机与 claim |
-| 自动创建会话并把 prompt 交给 leader | 现状必须由用户先开一个会话、发消息、模型调 `team_create` 才有 Lead | 插件主动 `ctx.agents.create` + `followup` |
-| leader 调 agent team 干活 | 已有 `team_*` 14 个工具，Lead 上下文由 `exec.agent` 提供 | 创建出的根会话要能拿到 team 工具 |
-| 完成后 leader 改 done；用户再发消息改回 inprogress | 无 | 新增 `board_task_status` 工具 + `session/event` 监听 |
+| 自动创建会话并把 prompt 交给 leader | 现状必须由用户先开一个会话、发消息、模型调 `dsh_team_create` 才有 Lead | 插件主动 `ctx.agents.create` + `followup` |
+| leader 调 agent team 干活 | 已有 `dsh_team_*` 14 个工具，Lead 上下文由 `exec.agent` 提供 | 创建出的根会话要能拿到 team 工具 |
+| 完成后 leader 改 done；用户再发消息改回 inprogress | 无 | 新增 `dsh_team_board_task_status` 工具 + `session/event` 监听 |
 | task 可封存 | 团队已有 archive；任务没有 | 新增 `archived_at`、恢复、活动任务先停止 |
 
 **结论：不是在现有 DAG 上打补丁，而是新增一层「workspace 任务编排」子系统。** 现有 `src/scheduler.mjs` 继续负责 team 内 DAG；看板负责 workspace 级任务生命周期。两者通过 `team_id` 关联，互不替代。
@@ -60,13 +60,13 @@ flowchart LR
   P[Host 插件 board-pump 每 2s] -->|POST /api/board/claim| Q
   Q -->|planning 槽位| P
   P -->|ctx.agents.create + followup| PA[同一会话：先规划]
-  PA -->|board_plan_submit| SC
+  PA -->|dsh_team_board_plan_submit| SC
   SC -->|planned，会话保持 idle| Q
   Q -->|inprogress 槽位| P
   P -->|默认 followup 同一会话；或按 execution_mode 新建| LA[Lead 会话]
-  LA -->|team_create / team_spawn / team_task| T[sidecar team/DAG]
+  LA -->|dsh_team_create / dsh_team_spawn / dsh_team_task| T[sidecar team/DAG]
   T -->|subagents.startActivation| M[成员 sub-agent]
-  LA -->|board_task_status done| SC
+  LA -->|dsh_team_board_task_status done| SC
   U -->|done 后再发消息| LA
   LA -->|session/event user/message| P
   P -->|done→inprogress| SC
@@ -77,7 +77,7 @@ flowchart LR
 
 1. **sidecar 是唯一状态源**：任务、并发计数、claim、状态迁移都在 SQLite 事务里完成。
 2. **只有 Host 插件能创建/取消 agent**：插件持有 `AgentHandle`，sidecar 不碰进程。
-3. **Lead 仍然是普通 DSH 根会话**：它用现有 `team_*` 工具，不引入 DSH 原生 Agent Teams，避免与 sidecar 的 team 概念冲突。
+3. **Lead 仍然是普通 DSH 根会话**：它用现有 `dsh_team_*` 工具，不引入 DSH 原生 Agent Teams，避免与 sidecar 的 team 概念冲突。
 
 ---
 
@@ -124,10 +124,10 @@ Web/API 新建会话的真实路径就在 Host 进程里：
 - 用 task 的 workspace 路径作为 `meta.cwd`，会话就出现在该工作区侧栏，不需要额外的「挂载会话」API。
 - workspace id 是持久化的 `randomUUID()`（同文件 `:646`），跨重启稳定；但 workspace 被删除重建会换 id，所以 `board_task` 同时存 `workspace_path` 作为兜底。
 
-### 3.4 创建出的 Lead 能拿到 `team_*` 工具
+### 3.4 创建出的 Lead 能拿到 `dsh_team_*` 工具
 
-- 本仓库在根上下文 `ctx.tools.register` 注册全部 `team_*`（`dsh-plugin/index.js:2294`），默认全局可见。
-- `team_create` 用 `exec.agent` 作为 Lead 并写 `lead_session_id`（`dsh-plugin/index.js:1383-1421`）；`team_spawn` 用 `exec.agent` 起 `subagents.startActivation`（`dsh-plugin/index.js:1425`）。
+- 本仓库在根上下文 `ctx.tools.register` 注册全部 `dsh_team_*`（`dsh-plugin/index.js:2294`），默认全局可见。
+- `dsh_team_create` 用 `exec.agent` 作为 Lead 并写 `lead_session_id`（`dsh-plugin/index.js:1383-1421`）；`dsh_team_spawn` 用 `exec.agent` 起 `subagents.startActivation`（`dsh-plugin/index.js:1425`）。
 - 只要创建会话时正确 mount agent preset（或使用不 restrict 工具的默认 preset），Lead 就能调这些工具。
 
 **注意**：只传 `meta.agentPreset` 不调用 `agentPresets.mount()` 等于没装组合。必须复制 API controller 的 `composeAgent` 逻辑（`dsh-api-session-controller/lib/index.js:371`）：
@@ -190,7 +190,7 @@ for await (const chunk of stream) {
 
 1. 会话出现在目标工作区；
 2. `followup` 后模型真的开始跑；
-3. 会话内能调 `board_plan_submit`；
+3. 会话内能调 `dsh_team_board_plan_submit`；
 4. 插件重启后不会重复建会话。
 
 M1 通过之前，不写 UI。
@@ -207,9 +207,9 @@ M1 通过之前，不写 UI。
 | D4 | 队列开关 `auto=0/1`，默认 `0` | 用户确认。`auto=0` 留在 todo，必须点「开始执行」；`auto=1` 调度器才可自动 claim。新建任务弹窗的「自动进入队列」开关只决定初始值 |
 | D5 | 并发按 workspace 计 | 每个工作区独立 `planning_concurrency` / `inprogress_concurrency`，默认 1/1 |
 | D6 | 并发控制用 sidecar 原子 claim，不用 sidecar 定时器 | 插件是唯一能建 agent 的一方；claim 事务保证多窗口/多 Host 不重复派发 |
-| D7 | task ↔ team 多对多，Lead 每建一个 team 就自动绑定 | 一个任务可以拆多个团队；绑定由 `team_create` 时按 `lead_session_id` 反查完成 |
-| D8 | `team_models` 是成员模型白名单 | 空数组 = 不限制；非空时 `team_spawn` 校验 provider/model，越界直接拒绝；省略路由时取白名单第一条 |
-| D9 | 完成/失败由 Lead 调 `board_task_status` 主动上报 | 符合需求；UI 另提供手动兜底，避免 Lead 忘记 |
+| D7 | task ↔ team 多对多，Lead 每建一个 team 就自动绑定 | 一个任务可以拆多个团队；绑定由 `dsh_team_create` 时按 `lead_session_id` 反查完成 |
+| D8 | `dsh_team_models` 是成员模型白名单 | 空数组 = 不限制；非空时 `dsh_team_spawn` 校验 provider/model，越界直接拒绝；省略路由时取白名单第一条 |
+| D9 | 完成/失败由 Lead 调 `dsh_team_board_task_status` 主动上报 | 符合需求；UI 另提供手动兜底，避免 Lead 忘记 |
 | D10 | 封存 = `archived_at`，不删数据 | 可恢复；活动任务先 stop 再 archive，用户确认 |
 | D11 | 同一会话模式下，会话模型固定为 `plan_*`（没有则回退 `lead_*` → Host 默认）；`lead_*` 只在 `execution_mode='new'` 时用于新会话 | DSH 没有公开的会话中途换模型 API；规划与执行共用会话就必然共用模型。若要严格分开规划/执行模型，选「在新的会话执行」 |
 
@@ -369,9 +369,9 @@ done ──user message──► inprogress（仅未封存）
 | `POST` | `/api/board/tasks/{id}/release` | `{kind, error}` → planning 回 failed / inprogress 回 failed |
 | `POST` | `/api/board/agents/plan` | `{sessionId, plan, summary}` → planned |
 | `POST` | `/api/board/agents/status` | `{sessionId, status, summary?}` → done/failed/inprogress |
-| `GET` | `/api/board/by-session/{sessionId}` | 工具反查任务（`board_plan_submit` / `board_task_status` 用） |
-| `POST` | `/api/board/tasks/{id}/teams` | `{teamId}` → 绑定 team（`team_create` 调） |
-| `GET` | `/api/board/by-team/{teamId}` | 工具反查任务（`team_spawn` 校验模型白名单） |
+| `GET` | `/api/board/by-session/{sessionId}` | 工具反查任务（`dsh_team_board_plan_submit` / `dsh_team_board_task_status` 用） |
+| `POST` | `/api/board/tasks/{id}/teams` | `{teamId}` → 绑定 team（`dsh_team_create` 调） |
+| `GET` | `/api/board/by-team/{teamId}` | 工具反查任务（`dsh_team_spawn` 校验模型白名单） |
 
 ### 7.3 SSE
 
@@ -536,7 +536,7 @@ async function setPermission(session, preset) {
 要点：
 
 - **attach 在 followup 之前**，否则 Lead 第一次调工具可能查不到任务。
-- **同一会话模式不新建 Lead**：sidecar 在 `board_plan_submit` 内直接 claim 执行槽位并 attach 回原 session，插件只切权限，不再 `followup`。只有槽位满、任务留在 `planned` 时，泵 claim 后才给原 session 补一条「现在开始执行」。
+- **同一会话模式不新建 Lead**：sidecar 在 `dsh_team_board_plan_submit` 内直接 claim 执行槽位并 attach 回原 session，插件只切权限，不再 `followup`。只有槽位满、任务留在 `planned` 时，泵 claim 后才给原 session 补一条「现在开始执行」。
 - **权限切换要在执行 prompt 之前**：`setPermission` 内部对未知 preset 只记日志并降级，不让任务失败。
 - claim 返回 `{item:null}` 时不建会话，不记错误。
 - 创建/attach 失败必须 `release`，否则槽位永久占用；同会话模式下 session 不在则回 `failed`，由用户 retry 或改「在新的会话执行」。
@@ -582,7 +582,7 @@ ctx.on('approval/request', async (req, next) => {
 
 - 任务已 `archived` 或有 `stop_requested`：取消并 `dispose` 对应 agent，调 `release/stop`。
 - `planning` 且 `claimed_at` 超过 `boardPlanningTimeoutMs`：调 `/api/board/agents/status` 置 `failed`（`planning_timeout`），再取消 agent。
-- `board_plan_submit` 成功后：
+- `dsh_team_board_plan_submit` 成功后：
   - `execution_mode='same'`：sidecar 在保存计划时**直接 claim inprogress 槽位并 attach 回规划会话**（`lead_session_id` 就是同一个 session），返回 `inprogress`；插件只把权限切到 `leadPermissionPreset`，同一个回合继续执行，不补发任何 prompt。执行槽位满时任务留在 `planned`，等泵 claim 后再走同会话 attach + 一条「现在开始执行」。
   - `execution_mode='new'`：5s 后 `dispose` 规划会话并移出 `boardSessions`；计划已存 sidecar，新 Lead 会话会重新拿到计划。
 - 侧车里有 `lead_session_id`，但 `boardSessions` 没有、且 `ctx.agents.get(id)` 也不存在：标记 `last_error='session_not_live'`，UI 显示「会话已断开，可重试」。不自动重建，避免重复干活。
@@ -602,7 +602,7 @@ ctx.on('approval/request', async (req, next) => {
 
 ```text
 你是「{title}」的规划 Agent。{same ? "这一轮先只做规划" : "只做规划"}，不写代码、不修改文件、不创建团队。
-{same ? "计划提交后读取 board_plan_submit 的返回：status 是 inprogress 就直接在同一会话里按计划开始执行（此时可以写文件、可以调用 team_*）；status 是 planned 说明执行槽位已满，立刻停下等待调度器。" : "规划完成后不要开始执行；调度器会在执行槽位空出后，在同一会话里让你继续。"}
+{same ? "计划提交后读取 dsh_team_board_plan_submit 的返回：status 是 inprogress 就直接在同一会话里按计划开始执行（此时可以写文件、可以调用 team_*）；status 是 planned 说明执行槽位已满，立刻停下等待调度器。" : "规划完成后不要开始执行；调度器会在执行槽位空出后，在同一会话里让你继续。"}
 
 开始规划前，先加载 `dsh-agent-team` 技能（调用 skill 工具，参数 {"name":"dsh-agent-team"}），按技能里的团队编排流程、成员拆分与工具字段执行，不要凭记忆猜参数。
 
@@ -619,7 +619,7 @@ ctx.on('approval/request', async (req, next) => {
 3. 团队与成员建议（每个成员的角色、模型、依赖关系；按能力域合并，同一模块或相邻功能优先交给同一个成员，能一人完成就不要拆成多人）
 4. 风险与回滚
 
-最后必须调用 board_plan_submit({ plan: "<完整 markdown>", summary: "<一句话>" })。
+最后必须调用 dsh_team_board_plan_submit({ plan: "<完整 markdown>", summary: "<一句话>" })。
 {same ? "（同会话模式在调用要求后附一句「返回 inprogress 就按下面规则继续执行」并接上 Lead 的执行规则，不再补发第二条 prompt）" : "不要只把计划写在回复里。提交后停下，等待执行指令。"}
 ```
 
@@ -638,11 +638,11 @@ ctx.on('approval/request', async (req, next) => {
 开始执行前，先加载 `dsh-agent-team` 技能（调用 skill 工具，参数 {"name":"dsh-agent-team"}），按技能里的团队编排流程、工具字段与常见错法执行，不要凭记忆猜参数。
 
 规则：
-1. 先调用 team_create 创建团队；name 用任务标题，workspace 用上面的路径。需要多个团队就多次创建，所有团队都会自动绑定到本任务。
-2. 调用 team_models 查看可用路由；只能使用以下模型：{teamModels}。为空表示不限制。
-3. 用 team_task 拆解并派发；用 team_status / team_report 跟踪。不要自己写代码，不要重复成员的工作。
-4. 每轮结束前必须先调用 board_task_status 对齐状态：全部任务成功→done（附完成摘要），失败→failed（附原因），仍需继续或等待用户→inprogress。不能只在开始时调用一次。
-5. 用户再次发消息时，先调用 board_task_status({ status: "inprogress" })，再继续处理。
+1. 先调用 dsh_team_create 创建团队；name 用任务标题，workspace 用上面的路径。需要多个团队就多次创建，所有团队都会自动绑定到本任务。
+2. 调用 dsh_team_models 查看可用路由；只能使用以下模型：{teamModels}。为空表示不限制。
+3. 用 dsh_team_task 拆解并派发；用 dsh_team_status / dsh_team_report 跟踪。不要自己写代码，不要重复成员的工作。
+4. 每轮结束前必须先调用 dsh_team_board_task_status 对齐状态：全部任务成功→done（附完成摘要），失败→failed（附原因），仍需继续或等待用户→inprogress。不能只在开始时调用一次。
+5. 用户再次发消息时，先调用 dsh_team_board_task_status({ status: "inprogress" })，再继续处理。
 ```
 
 Prompt 里不塞完整历史，只塞任务与计划；文件内容让模型自己读。
@@ -657,15 +657,15 @@ Prompt 里不塞完整历史，只塞任务与计划；文件内容让模型自�
 
 | 工具 | 作用域 | 行为 |
 |---|---|---|
-| `board_plan_submit` | 规划会话 | `{plan, summary}`；按 `exec.agent.session.id` 反查 `planning_session_id`，调 `/api/board/agents/plan`。`execution_mode='same'` 时 sidecar 在保存计划的同时 claim 执行槽位并 attach 回同一个 session（返回 `inprogress`），插件据此切权限、同一回合继续执行；槽位满则返回 `planned`，等泵接管。不在规划会话里调用则报错 |
-| `board_task_status` | Lead 会话 | `{status:'done'\|'failed'\|'inprogress', summary?}`；按 `lead_session_id` 反查，调 `/api/board/agents/status`。`same` 模式下与规划是同一个会话 |
+| `dsh_team_board_plan_submit` | 规划会话 | `{plan, summary}`；按 `exec.agent.session.id` 反查 `planning_session_id`，调 `/api/board/agents/plan`。`execution_mode='same'` 时 sidecar 在保存计划的同时 claim 执行槽位并 attach 回同一个 session（返回 `inprogress`），插件据此切权限、同一回合继续执行；槽位满则返回 `planned`，等泵接管。不在规划会话里调用则报错 |
+| `dsh_team_board_task_status` | Lead 会话 | `{status:'done'\|'failed'\|'inprogress', summary?}`；按 `lead_session_id` 反查，调 `/api/board/agents/status`。`same` 模式下与规划是同一个会话 |
 
 两个工具都只允许在对应会话里用，避免普通会话误改看板。
 
 ### 10.2 改造 2 个现有工具
 
-- `team_create`：创建成功后，如果 `exec.agent.id` 对应某个 `board_task.lead_session_id`，调 `POST /api/board/tasks/{id}/teams` 绑定。
-- `team_spawn`：如果 `exec.agent.id` 对应看板任务且 `team_models` 非空，校验请求的 `{provider, model}` 在白名单内；不在则返回明确错误。**省略 provider/model 时取白名单第一条**，避免继承 Lead 的非白名单模型。这样模型白名单不是只靠 prompt。
+- `dsh_team_create`：创建成功后，如果 `exec.agent.id` 对应某个 `board_task.lead_session_id`，调 `POST /api/board/tasks/{id}/teams` 绑定。
+- `dsh_team_spawn`：如果 `exec.agent.id` 对应看板任务且 `dsh_team_models` 非空，校验请求的 `{provider, model}` 在白名单内；不在则返回明确错误。**省略 provider/model 时取白名单第一条**，避免继承 Lead 的非白名单模型。这样模型白名单不是只靠 prompt。
 
 ### 10.3 为什么不给用户加工具
 
@@ -761,7 +761,7 @@ Prompt 里不塞完整历史，只塞任务与计划；文件内容让模型自�
 
 | 场景 | 行为 |
 |---|---|
-| 规划 Agent 没调 `board_plan_submit` 就 idle | idle 后等 5s，仍 planning → failed，释放槽位 |
+| 规划 Agent 没调 `dsh_team_board_plan_submit` 就 idle | idle 后等 5s，仍 planning → failed，释放槽位 |
 | 规划超时 | 30 分钟 → failed，`planning_timeout` |
 | Lead 忘记调 done | 任务停在 inprogress；UI 可手动完成；M4 可在「所有 team 任务完成」时给 Lead 发提醒 |
 | 创建会话失败 | `release` 回 failed，写错误；不占槽位 |
@@ -791,14 +791,14 @@ Prompt 里不塞完整历史，只塞任务与计划；文件内容让模型自�
 
 1. `curl` 建任务 → 2s 内出现 `planning`。
 2. DSH 侧栏出现一个新会话，cwd 是目标工作区。
-3. 会话回复里能调 `board_plan_submit`，任务变 `planned`。
+3. 会话回复里能调 `dsh_team_board_plan_submit`，任务变 `planned`。
 4. 把 Agent 手动停掉，任务变 `failed`，槽位释放。
 
 ### M2 · 完整状态机 + 同一会话执行 + 工具
 
-- `planned → inprogress` claim；**`same` 模式给原 session 切权限并 followup，`new` 模式新建 Lead 会话**；`board_task_status`；`session/event` 回 inprogress。
+- `planned → inprogress` claim；**`same` 模式给原 session 切权限并 followup，`new` 模式新建 Lead 会话**；`dsh_team_board_task_status`；`session/event` 回 inprogress。
 - 卡片「开始执行 / 在新的会话执行」对应的 `start` 接口与 `execution_mode`。
-- `team_create` 自动绑定；`team_spawn` 模型白名单。
+- `dsh_team_create` 自动绑定；`dsh_team_spawn` 模型白名单。
 - 停止/重试/封存/恢复/设置。
 - `onApprovalRequest` 增加看板会话自动 deny（按 sessionId 查 `/api/board/by-session`）。
 - `GET /api/board/live` 对账。
@@ -824,10 +824,10 @@ Prompt 里不塞完整历史，只塞任务与计划；文件内容让模型自�
 
 ### 14.1 已接受的风险
 
-1. Lead 是否调 `board_task_status` 取决于模型服从性；有手动兜底，但不保证自动 done。
+1. Lead 是否调 `dsh_team_board_task_status` 取决于模型服从性；有手动兜底，但不保证自动 done。
 2. DSH 重启后活动任务不会自动续跑；需要用户重试。
 3. `planned` / `failed` 都归入 Waiting 列，靠徽标区分，不单独占列。
-4. 模型白名单只在 `team_spawn` 校验；Lead 仍可能用别的方式绕过（概率低）。
+4. 模型白名单只在 `dsh_team_spawn` 校验；Lead 仍可能用别的方式绕过（概率低）。
 5. 会话数量：done 的 Lead 会话默认保留（支持后续追问），长期需要 GC 策略。
 6. **同一会话模式无法中途换模型**：DSH 没有公开 API，规划用什么模型，执行就用什么模型。要分开模型只能选「在新的会话执行」。
 
@@ -868,7 +868,7 @@ curl -s 'http://127.0.0.1:4317/api/board?workspaceId=<ws-id>' | jq
 
 - 任务从 `todo` 变 `planning`，不需要用户点任何按钮。
 - 会话出现在正确工作区，模型真的开始跑。
-- 规划会话调 `board_plan_submit` 后任务变 `planned`，且会话仍然存在（同一会话模式不 dispose）。
+- 规划会话调 `dsh_team_board_plan_submit` 后任务变 `planned`，且会话仍然存在（同一会话模式不 dispose）。
 - 停掉 Agent 后任务变 `failed`，再建一个任务仍能拿到 planning 槽位（并发=1）。
 
 ---
@@ -879,7 +879,7 @@ M1 + M2 已落代码并通过测试：
 
 - sidecar：`src/board.mjs`（状态机、并发槽位、claim/attach/release、plan/status、事件），`src/db.mjs` schema v12 四表，`src/core.mjs` 挂载 `board`，`src/server.mjs` 增 §3.13 全部路由。
 - Host 插件：`boardEnabled`、`boardDispatchMs`、`boardIdleGraceMs`、`boardPlanningTimeoutMs`；`spawnBoardSession` 用 `ctx.get('agents').create` + `attach` + `followup`；`same` 模式复用规划会话，`new` 模式首轮另建 Lead；任何已有 `lead_session_id` 的追问都复用该会话，`resumed=1` 时只 attach 不重复投 prompt；审批自动拒绝、`user/message` 回翻、规划超时与重启后会话失效对账。
-- 工具：`board_plan_submit`、`board_task_status`；`team_create` 自动绑定 board task，`team_spawn` 校验 `teamModels` 白名单。
+- 工具：`dsh_team_board_plan_submit`、`dsh_team_board_task_status`；`dsh_team_create` 自动绑定 board task，`dsh_team_spawn` 校验 `teamModels` 白名单。
 - 测试：`tests/ac-18-board.mjs`、`tests/plugin-board.mjs`；全量 `npm test` 30/30 通过。
 - 真实端到端（2026-11-05）：`story` 工作区任务 `bt_mw2boe4z1daah` 从 todo → planning → planned → inprogress → done，同一会话完成规划与执行，Lead 创建 `team_mw2bu51b3a1xi` 并产出 `story.md`。
 - 契约：[`CONTRACT.md`](CONTRACT.md) §3.13；决策：[`ADR-012`](adr/ADR-012-workspace-board.md)。

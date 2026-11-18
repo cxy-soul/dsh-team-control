@@ -408,7 +408,7 @@ export class Board {
   }
 
   /**
-   * 手动标记完成：Lead 忘记调用 board_task_status 时的兜底。
+   * 手动标记完成：Lead 忘记调用 dsh_team_board_task_status 时的兜底。
    * 只允许从「已规划 / 执行中 / 失败」进入 done，并关掉自动入队，避免又被调度器拉起。
    */
   completeTask(id, body = {}) {

@@ -2,7 +2,7 @@
  * 记忆 —— 团队成员空间 + 共享空间的显式上下文（文件持久化，一条记忆一个 JSON）。
  *
  * 数据来自 GET /api/memory（只回元数据 + 摘要）；选中后 GET /api/memory/:id 取完整 value。
- * 这里只做 Lead/面板侧的查看、改可见性、删除；成员写入由 team_memory_write 工具完成。
+ * 这里只做 Lead/面板侧的查看、改可见性、删除；成员写入由 dsh_team_memory_write 工具完成。
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Copy, RefreshCw, Trash2 } from 'lucide-react';
@@ -148,7 +148,7 @@ export function MemoryView() {
   if (!teamId) body = <EmptyState title="未选择团队" />;
   else if (errors.memories && !memories.length) body = <EmptyState title="记忆加载失败" detail={errors.memories} />;
   else if (!memories.length) {
-    body = <EmptyState title="还没有记忆" detail="成员收工时可用 team_memory_write 保存 handoff；Lead 可要求成员上传到团队空间" />;
+    body = <EmptyState title="还没有记忆" detail="成员收工时可用 dsh_team_memory_write 保存 handoff；Lead 可要求成员上传到团队空间" />;
   } else if (!filtered.length) {
     body = <EmptyState title="没有匹配的记忆" detail="换个 scope / 类型 / 关键词试试" />;
   } else {

@@ -68,8 +68,8 @@ const main = async () => {
       return hook;
     };
 
-    const team = (await tool('team_create').execute({ name: 'chg', workspace: tmp.ws, runtime: 'agent' }, lead)).team;
-    const alice = (await tool('team_spawn').execute({ teamId: team.id, name: 'alice', role: 'coder', prompt: '你是 alice' }, lead)).member;
+    const team = (await tool('dsh_team_create').execute({ name: 'chg', workspace: tmp.ws, runtime: 'agent' }, lead)).team;
+    const alice = (await tool('dsh_team_spawn').execute({ teamId: team.id, name: 'alice', role: 'coder', prompt: '你是 alice' }, lead)).member;
     const asAlice = { agent: { id: alice.agentSessionId, cwd: tmp.ws } };
 
     // ① 新建文件（write）：插件先读 before=null，执行 next 真正落盘，再读 after
@@ -167,7 +167,7 @@ const main = async () => {
     // ⑧ spawn 时记下的团队工作目录兜底：workingDirectory 拿不到、Agent 上也没有 cwd 时，
     //    相对路径仍按 team.workspace 解析；否则成员用相对路径写文件会静默丢改动（审阅页漏条）。
     ctx.wsBySession.clear();
-    const bob = (await tool('team_spawn').execute({ teamId: team.id, name: 'bob', role: 'coder', prompt: '你是 bob' }, lead)).member;
+    const bob = (await tool('dsh_team_spawn').execute({ teamId: team.id, name: 'bob', role: 'coder', prompt: '你是 bob' }, lead)).member;
     await execChange()(
       {
         name: 'write',

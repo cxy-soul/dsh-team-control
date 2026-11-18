@@ -1,4 +1,4 @@
-// tests/plugin-approval.mjs — 成员审批转发给 Lead：approval/request → 通知 → team_approve → allowed-once/rejected
+// tests/plugin-approval.mjs — 成员审批转发给 Lead：approval/request → 通知 → dsh_team_approve → allowed-once/rejected
 import assert from 'node:assert/strict';
 import { mkTmp, startSidecar, waitFor } from './lib/harness.mjs';
 import { apply } from '../dsh-plugin/index.js';
@@ -42,8 +42,8 @@ const main = async () => {
     const tool = (n) => { const t = ctx.tools.get(n); assert(t, `工具 ${n} 已注册`); return t; };
     const lead = { agent: { id: 'sess-lead' } };
 
-    const team = (await tool('team_create').execute({ name: 'plugin-approval', workspace: tmp.ws }, lead)).team;
-    const alice = await tool('team_spawn').execute({ teamId: team.id, name: 'alice', prompt: '你是 alice。' }, lead);
+    const team = (await tool('dsh_team_create').execute({ name: 'plugin-approval', workspace: tmp.ws }, lead)).team;
+    const alice = await tool('dsh_team_spawn').execute({ teamId: team.id, name: 'alice', prompt: '你是 alice。' }, lead);
     const sessionId = alice.member.agentSessionId;
 
     // 插件已注册 approval/request 应答者
@@ -57,7 +57,7 @@ const main = async () => {
     assert.equal(note.target, 'sess-lead', '通知发给 Lead');
     const text = note.content[0].text;
     assert(text.includes('req-1'), '通知带 requestId');
-    assert(text.includes('team_approve'), '通知教 Lead 怎么批');
+    assert(text.includes('dsh_team_approve'), '通知教 Lead 怎么批');
     assert(text.includes('alice'), '通知带成员名');
     assert(text.includes('exec'), '通知带工具名');
 
@@ -68,7 +68,7 @@ const main = async () => {
     }, 5000);
 
     // ② Lead 批准 → allowed-once
-    const decided = await tool('team_approve').execute({ teamId: team.id, requestId: 'req-1', decision: 'allow' }, lead);
+    const decided = await tool('dsh_team_approve').execute({ teamId: team.id, requestId: 'req-1', decision: 'allow' }, lead);
     assert.equal(decided.decision, 'allow', '返回决策');
     assert.equal(await p1, 'allowed-once', '放行本次操作');
     await waitFor('镜像状态 allowed', async () => {
@@ -105,7 +105,7 @@ const main = async () => {
       async () => 'unavailable',
     );
     await waitFor('敏感命令仍通知 Lead', async () => (ctx.agents.messages.length > beforeAuto ? true : null), 5000);
-    await tool('team_approve').execute({ teamId: team.id, requestId: 'req-danger', decision: 'deny', reason: '危险命令' }, lead);
+    await tool('dsh_team_approve').execute({ teamId: team.id, requestId: 'req-danger', decision: 'deny', reason: '危险命令' }, lead);
     assert.equal(await pDanger, 'rejected', '敏感命令不自动放行');
 
     // ②d 只读管道与 PowerShell 只读命令自动放行：含 `|` 不再一律转 Lead
@@ -141,7 +141,7 @@ const main = async () => {
       async () => 'unavailable',
     );
     await waitFor('重定向命令仍通知 Lead', async () => (ctx.agents.messages.length > beforePipe ? true : null), 5000);
-    await tool('team_approve').execute({ teamId: team.id, requestId: 'req-redirect', decision: 'deny', reason: '写文件需审批' }, lead);
+    await tool('dsh_team_approve').execute({ teamId: team.id, requestId: 'req-redirect', decision: 'deny', reason: '写文件需审批' }, lead);
     assert.equal(await pRedirect, 'rejected', '重定向命令不自动放行');
 
     // ②f autoApproveTools 工具白名单：非 shell 工具、无参数缓存也放行
@@ -158,13 +158,13 @@ const main = async () => {
     // ②g 白名单未命中的非 shell 工具仍转 Lead
     const pOtherTool = handler({ id: 'req-other-tool', agent: { id: sessionId }, toolName: 'fs.write', reason: 'write outside' }, async () => 'unavailable');
     await waitFor('未命中白名单通知 Lead', async () => (ctx.agents.messages.length > beforePipe + 1 ? true : null), 5000);
-    await tool('team_approve').execute({ teamId: team.id, requestId: 'req-other-tool', decision: 'deny', reason: '写操作' }, lead);
+    await tool('dsh_team_approve').execute({ teamId: team.id, requestId: 'req-other-tool', decision: 'deny', reason: '写操作' }, lead);
     assert.equal(await pOtherTool, 'rejected', '未命中工具白名单不自动放行');
 
     // ③ 拒绝 → rejected
     const p2 = handler({ id: 'req-2', agent: { id: sessionId }, toolName: 'fs.write', reason: '写 /etc/hosts' }, async () => 'unavailable');
     await waitFor('第二条通知', async () => (ctx.agents.messages.length >= 3 ? true : null), 5000);
-    await tool('team_approve').execute({ teamId: team.id, requestId: 'req-2', decision: 'deny', reason: '不允许' }, lead);
+    await tool('dsh_team_approve').execute({ teamId: team.id, requestId: 'req-2', decision: 'deny', reason: '不允许' }, lead);
     assert.equal(await p2, 'rejected', '拒绝本次操作');
     await waitFor('镜像状态 rejected', async () => {
       const i = (await api.get(`/api/approvals?team=${team.id}`)).items.find((x) => x.id === 'req-2');
@@ -182,13 +182,13 @@ const main = async () => {
     await waitFor('第三条通知', async () => (ctx.agents.messages.length > beforeStranger ? true : null), 5000);
     let denied = null;
     try {
-      await tool('team_approve').execute({ teamId: team.id, requestId: 'req-4', decision: 'allow' }, { agent: { id: 'sess-other' } });
+      await tool('dsh_team_approve').execute({ teamId: team.id, requestId: 'req-4', decision: 'allow' }, { agent: { id: 'sess-other' } });
     } catch (e) { denied = e; }
     assert(denied && /只有该团队的 Lead/.test(denied.message), '非 Lead 被拒');
-    await tool('team_approve').execute({ teamId: team.id, requestId: 'req-4', decision: 'deny' }, lead);
+    await tool('dsh_team_approve').execute({ teamId: team.id, requestId: 'req-4', decision: 'deny' }, lead);
     assert.equal(await p3, 'rejected', '收尾拒绝');
 
-    console.log('PASS plugin-approval — 审批转发 Lead、team_approve 放行/拒绝、非成员放行原链路、非 Lead 拒绝');
+    console.log('PASS plugin-approval — 审批转发 Lead、dsh_team_approve 放行/拒绝、非成员放行原链路、非 Lead 拒绝');
     process.exitCode = 0;
   } finally {
     try { await sidecar.close(); } catch { /* ignore */ }

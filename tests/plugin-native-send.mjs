@@ -4,7 +4,7 @@
 // 两代宿主的差异只在「有没有 send_message 工具」：
 // - 有：调 `ctx.tools.execute({ calls:[...], agent: sender })`，接收方由宿主 resolveName 解析；
 // - 没有：`subagents.sendMessage(sender, sessionId, content, { signal })`。
-// 这里用同一个假 ctx 切换两种形态，验证 team_send 的分支与失败透传。
+// 这里用同一个假 ctx 切换两种形态，验证 dsh_team_send 的分支与失败透传。
 import assert from 'node:assert/strict';
 import { mkTmp, startSidecar } from './lib/harness.mjs';
 import { apply } from '../dsh-plugin/index.js';
@@ -74,8 +74,8 @@ const main = async () => {
       reportToolCalls: false, reportChanges: false, reportLlmCalls: false, reportContext: false,
       reportWorkspaces: false, reportLlmCatalog: false, agentAutoDispatch: false,
     });
-    const send = fake.ctx.tools.get('team_send');
-    assert.equal(typeof send?.execute, 'function', 'team_send 已注册');
+    const send = fake.ctx.tools.get('dsh_team_send');
+    assert.equal(typeof send?.execute, 'function', 'dsh_team_send 已注册');
     const lead = { agent: { id: 'sess-lead' } };
 
     // ① 低版本：没有 send_message 工具 → 走 subagents.sendMessage

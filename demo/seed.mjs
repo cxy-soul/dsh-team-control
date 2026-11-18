@@ -1,7 +1,7 @@
 // demo/seed.mjs — 给一个**正在运行**的 sidecar 灌一份可交互的演示数据（纯 Node）
 // 用法：node demo/seed.mjs [--url http://127.0.0.1:4317] [--home ~/.dsh/team]
 // 内容：1 个团队（permissionPreset）+ 2 个 sub-agent 成员；task A 已完成；task B 待派发；
-//       一条 pending 审批，等你在面板/CLI 里用 team_approve 或 `dsh-team approvals` 处理。
+//       一条 pending 审批，等你在面板/CLI 里用 dsh_team_approve 或 `dsh-team approvals` 处理。
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

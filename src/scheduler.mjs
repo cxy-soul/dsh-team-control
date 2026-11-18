@@ -84,7 +84,7 @@ export class Scheduler {
       if (m) {
         throw ERR.bad(`deps.from 必须是上游 task id；"${from}" 是成员「${m.name}」的 id`, {
           field: 'deps.from', got: from,
-          hint: '用该成员任务返回的 task id；team_status({teamId, detail:"dag"}) 能看到每个节点 id 与依赖',
+          hint: '用该成员任务返回的 task id；dsh_team_status({teamId, detail:"dag"}) 能看到每个节点 id 与依赖',
         });
       }
       if (!/^task_/.test(String(from))) {

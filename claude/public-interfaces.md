@@ -1,6 +1,6 @@
 # 对外接口
 
-> **v2 变更（2026-11）**：worker 运行时与四域 broker 已移除；成员一律是真 sub-agent，权限由 DSH 权限预设按成员分配，成员审批经 `team_approve` 转发给 Lead。下文涉及 `worker` / `broker` / `policy` / `scope` 的段落为历史记录，以 [CONTRACT.md](../docs/CONTRACT.md) 与 [README](../README.md) 为准。
+> **v2 变更（2026-11）**：worker 运行时与四域 broker 已移除；成员一律是真 sub-agent，权限由 DSH 权限预设按成员分配，成员审批经 `dsh_team_approve` 转发给 Lead。下文涉及 `worker` / `broker` / `policy` / `scope` 的段落为历史记录，以 [CONTRACT.md](../docs/CONTRACT.md) 与 [README](../README.md) 为准。
 
 ## 1. REST（`src/server.mjs`，前缀 `/api`）
 
@@ -84,34 +84,34 @@
 
 全局：`--url`、`--token`、`--data`。
 
-## 3. 插件工具（`dsh-plugin/index.js` `buildTools`，共 24 个（20 个 `team_*` + 4 个 `board_*`））
+## 3. 插件工具（`dsh-plugin/index.js` `buildTools`，共 24 个（20 个 `dsh_team_*` + 4 个 `dsh_team_board_*`））
 
 | 工具 | 作用 |
 |---|---|
-| `team_create` | 建团队，`permissionPreset`、`agentPreset`、`maxMembers`、`workspace` |
-| `team_spawn` | 拉起 sub-agent 成员，`permissionPreset`/`agentPreset` 按成员覆盖 |
-| `team_member` | update（改模型/上下文会重建子会话）/retire/remove 成员 |
-| `team_preset` | 自建 agentPreset：`list`/`save`/`show`，写 `presetDir` 并即时注册 |
-| `team_models` | 列出可用 provider/model 路由（含厂商级 `providerNote`） |
-| `team_status` | `detail:"summary"`（成员）/`"dag"`（任务图） |
-| `team_task` | 建任务（DAG 节点），`plan` 是给成员的简报 |
-| `team_task_get` | 按 `taskId` 查团队任务本体 + 它在 DAG 里的节点（`dependsOn`/`ready`/`blockers`），只限本团队 |
-| `team_send` | 给成员/广播投消息 |
-| `team_todo` | 设置任务清单（落 sidecar，面板可见） |
-| `team_report_task` | 成员报告任务结果（done/failed/blocked） |
-| `team_dispatch` | 手动泵一次派发器 |
-| `team_approve` | Lead 裁决成员审批（allow/deny），转成宿主 outcome |
-| `team_control` | interrupt（任务转 paused）/resume/assign/abort（任务作废） |
-| `team_report` | 导出 Markdown 运行报告（含审批与 audit） |
-| `team_memory_write` | 写一条显式记忆（member 自己的空间 / team 共享空间；同 key upsert，`expectedVersion` 做 CAS） |
-| `team_memory_read` | 按 `memoryId` 或 `scope+key` 读一条记忆（含正文） |
-| `team_memory_list` | 列记忆元数据（slot/title/kind/来源/更新时间，不含正文） |
-| `team_memory_share` | 改可见性：private / team / shared（shared 可凭 id 跨队读） |
-| `team_memory_delete` | 删除一条记忆文件（团队删除不级联） |
-| `board_plan_submit` | 规划会话提交计划，任务 `planning → planned`（same 模式同时绑定执行会话） |
-| `board_task_status` | Lead 会话回报看板任务 `done`/`failed`/`inprogress` |
-| `board_task_create` | 成员创建看板任务（`workspaceId` 可省略：依次用当前任务工作区 / 唯一工作区推断），支持 `gitBranch` |
-| `board_task_get` | 查本会话关联的看板任务，或按 `taskId` 查任意任务（精简字段） |
+| `dsh_team_create` | 建团队，`permissionPreset`、`agentPreset`、`maxMembers`、`workspace` |
+| `dsh_team_spawn` | 拉起 sub-agent 成员，`permissionPreset`/`agentPreset` 按成员覆盖 |
+| `dsh_team_member` | update（改模型/上下文会重建子会话）/retire/remove 成员 |
+| `dsh_team_preset` | 自建 agentPreset：`list`/`save`/`show`，写 `presetDir` 并即时注册 |
+| `dsh_team_models` | 列出可用 provider/model 路由（含厂商级 `providerNote`） |
+| `dsh_team_status` | `detail:"summary"`（成员）/`"dag"`（任务图） |
+| `dsh_team_task` | 建任务（DAG 节点），`plan` 是给成员的简报 |
+| `dsh_team_task_get` | 按 `taskId` 查团队任务本体 + 它在 DAG 里的节点（`dependsOn`/`ready`/`blockers`），只限本团队 |
+| `dsh_team_send` | 给成员/广播投消息 |
+| `dsh_team_todo` | 设置任务清单（落 sidecar，面板可见） |
+| `dsh_team_report_task` | 成员报告任务结果（done/failed/blocked） |
+| `dsh_team_dispatch` | 手动泵一次派发器 |
+| `dsh_team_approve` | Lead 裁决成员审批（allow/deny），转成宿主 outcome |
+| `dsh_team_control` | interrupt（任务转 paused）/resume/assign/abort（任务作废） |
+| `dsh_team_report` | 导出 Markdown 运行报告（含审批与 audit） |
+| `dsh_team_memory_write` | 写一条显式记忆（member 自己的空间 / team 共享空间；同 key upsert，`expectedVersion` 做 CAS） |
+| `dsh_team_memory_read` | 按 `memoryId` 或 `scope+key` 读一条记忆（含正文） |
+| `dsh_team_memory_list` | 列记忆元数据（slot/title/kind/来源/更新时间，不含正文） |
+| `dsh_team_memory_share` | 改可见性：private / team / shared（shared 可凭 id 跨队读） |
+| `dsh_team_memory_delete` | 删除一条记忆文件（团队删除不级联） |
+| `dsh_team_board_plan_submit` | 规划会话提交计划，任务 `planning → planned`（same 模式同时绑定执行会话） |
+| `dsh_team_board_task_status` | Lead 会话回报看板任务 `done`/`failed`/`inprogress` |
+| `dsh_team_board_task_create` | 成员创建看板任务（`workspaceId` 可省略：依次用当前任务工作区 / 唯一工作区推断），支持 `gitBranch` |
+| `dsh_team_board_task_get` | 查本会话关联的看板任务，或按 `taskId` 查任意任务（精简字段） |
 
 ## 4. Host 同源代理（`dsh-plugin-ui/index.js`）
 

@@ -235,9 +235,9 @@ export function ModelsView() {
 
       <div className="text-xs text-muted-foreground">
         每个厂商分组头部的备注写「这个厂商整体擅长什么」（例如 gpt 适合逻辑处理、claude 适合做设计），模型行备注写单模型差异；
-        两者都会随 <code className="rounded bg-muted px-1">team_models</code> 下发给主 Agent（providerNote / note），用于按能力挑模型。
-        只有勾选启用的 provider/model 才会出现在 <code className="rounded bg-muted px-1">team_models</code> 里，也才能传给 <code className="rounded bg-muted px-1">team_spawn</code> 的 agentProvider/model。
-        模型行里的 effort 开关决定该 route 允许派发的 <code className="rounded bg-muted px-1">reasoningEffort</code>（含继承自 Lead 的强度）：关掉的强度会从 team_models 里隐藏，主 Agent 指定时直接被拒绝。
+        两者都会随 <code className="rounded bg-muted px-1">dsh_team_models</code> 下发给主 Agent（providerNote / note），用于按能力挑模型。
+        只有勾选启用的 provider/model 才会出现在 <code className="rounded bg-muted px-1">dsh_team_models</code> 里，也才能传给 <code className="rounded bg-muted px-1">dsh_team_spawn</code> 的 agentProvider/model。
+        模型行里的 effort 开关决定该 route 允许派发的 <code className="rounded bg-muted px-1">reasoningEffort</code>（含继承自 Lead 的强度）：关掉的强度会从 dsh_team_models 里隐藏，主 Agent 指定时直接被拒绝。
         目录本身来自宿主 DSH，本面板不代理任何模型请求；Host 侧模型配置变化后，下一次团队工具调用会刷新它。
       </div>
 
@@ -300,7 +300,7 @@ export function ModelsView() {
                     {m.description ? <div className="text-xs text-muted-foreground">{m.description}</div> : null}
                   </div>
                   {m.efforts?.length ? (
-                    <span className="flex h-8 flex-wrap items-center gap-1" title="允许主 Agent 派发给该模型的思考强度：关闭后 team_spawn 指定它会被拒绝">
+                    <span className="flex h-8 flex-wrap items-center gap-1" title="允许主 Agent 派发给该模型的思考强度：关闭后 dsh_team_spawn 指定它会被拒绝">
                       {m.efforts.map((e) => {
                         const on = !m.allowedEfforts || m.allowedEfforts.includes(e.id);
                         const isDefault = m.defaultEffort === e.id;

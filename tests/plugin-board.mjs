@@ -110,13 +110,13 @@ const main = async () => {
     assert.equal(perm(permissions, rec.agent.id), 'read-only', '规划只读');
     assert.match(rec.followups[0].content[0].text, /规划 Agent/, '投了规划 prompt');
     assert.match(rec.followups[0].content[0].text, /dsh-agent-team/, '规划 prompt 要求先加载 dsh-agent-team 技能');
-    assert.match(rec.followups[0].content[0].text, /board_task_status/, '同会话规划 prompt 自带执行规则，提交后不再补发');
-    assert.match(rec.followups[0].content[0].text, /独立的一件事：调用 board_task_create 给它建一张看板卡/, 'Lead 提示词要求先判断新任务归属');
-    assert.match(rec.followups[0].content[0].text, /team_task 只拆解当前任务/, 'Lead 提示词声明 team_task 只拆当前任务、不上看板');
+    assert.match(rec.followups[0].content[0].text, /dsh_team_board_task_status/, '同会话规划 prompt 自带执行规则，提交后不再补发');
+    assert.match(rec.followups[0].content[0].text, /独立的一件事：调用 dsh_team_board_task_create 给它建一张看板卡/, 'Lead 提示词要求先判断新任务归属');
+    assert.match(rec.followups[0].content[0].text, /dsh_team_task 只拆解当前任务/, 'Lead 提示词声明 dsh_team_task 只拆当前任务、不上看板');
     assert.equal((await api.get(`/api/board/tasks/${task.id}`)).status, 'planning', '任务进入 planning');
 
-    const planTool = ctx.tools.get('board_plan_submit');
-    assert(planTool, 'board_plan_submit 已注册');
+    const planTool = ctx.tools.get('dsh_team_board_plan_submit');
+    assert(planTool, 'dsh_team_board_plan_submit 已注册');
     await planTool.execute({ plan: '# 计划', summary: '一句话' }, { agent: { id: rec.agent.id } });
     const planned = await api.get(`/api/board/tasks/${task.id}`);
     assert.equal(planned.status, 'inprogress', '提交计划即进入执行槽位');
@@ -127,8 +127,8 @@ const main = async () => {
     assert.equal(rec.followups.length, 1, '不再补发「现在开始执行」');
     assert.equal((await api.get(`/api/board/tasks/${task.id}`)).status, 'inprogress', '任务进入 inprogress');
 
-    const statusTool = ctx.tools.get('board_task_status');
-    assert(statusTool, 'board_task_status 已注册');
+    const statusTool = ctx.tools.get('dsh_team_board_task_status');
+    assert(statusTool, 'dsh_team_board_task_status 已注册');
     await statusTool.execute({ status: 'done', summary: '完成' }, { agent: { id: rec.agent.id } });
     assert.equal((await api.get(`/api/board/tasks/${task.id}`)).status, 'done', 'Lead 置 done');
 
@@ -145,7 +145,7 @@ const main = async () => {
     });
     const rec2 = await waitFor('second planning session', () => created[1]?.followups?.length ? created[1] : null);
     assert.notEqual(rec2.agent.id, rec.agent.id, 'new 模式规划会话不同');
-    await ctx.tools.get('board_plan_submit').execute({ plan: '# 计划2' }, { agent: { id: rec2.agent.id } });
+    await ctx.tools.get('dsh_team_board_plan_submit').execute({ plan: '# 计划2' }, { agent: { id: rec2.agent.id } });
     const rec3 = await waitFor('new lead session', () => created[2]?.followups?.length ? created[2] : null);
     assert.notEqual(rec3.agent.id, rec2.agent.id, 'new 模式执行会话独立');
     assert.equal(rec3.options.agentOptions?.model, 'default-m', '无 route 时回退到宿主动态模型');
@@ -162,8 +162,8 @@ const main = async () => {
     await waitFor('manual start claims', () => created.length >= 4);
 
     // 重试续跑：已有团队时禁止重复建队，force 才放行
-    const teamTool = ctx.tools.get('team_create');
-    assert(teamTool, 'team_create 已注册');
+    const teamTool = ctx.tools.get('dsh_team_create');
+    assert(teamTool, 'dsh_team_create 已注册');
     const firstTeam = await teamTool.execute({ name: '续跑团队', workspace: tmp.ws }, { agent: { id: rec3.agent.id } });
     assert(firstTeam.team?.id, '首次建队返回 team');
     const bound = await api.get(`/api/board/tasks/${task2.id}/teams`);

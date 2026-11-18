@@ -84,7 +84,7 @@ function resolveConfig(config) {
     forceStopPollMs: Number(c.forceStopPollMs) || 1000,
     // 任务投递后成员会话迟迟没有任何事件（模型路由报错、会话没启动）就判定失败并交回 sidecar 重试
     agentStartTimeoutMs: Number(c.agentStartTimeoutMs) || 120000,
-    // 成员触发权限审批（permission preset 的 approval=ask）后，等待 Lead 调 team_approve 的上限
+    // 成员触发权限审批（permission preset 的 approval=ask）后，等待 Lead 调 dsh_team_approve 的上限
     approvalTimeoutMs: Number(c.approvalTimeoutMs) || 600000,
     // 审批降噪：命令明确是「已知安全程序 + 无重定向/命令替换/脚本块」时直接 allowed-once，
     // 不打扰 Lead；敏感命令（见 DEFAULT_SENSITIVE_COMMAND_PATTERNS）仍转 Lead 审批
@@ -201,10 +201,10 @@ const qs = (obj) => {
 // （spawnTeammate / sendMessage / interrupt）和派发，因为只有 Host 进程能创建 DSH agent。
 //
 // 流程：
-//   team_spawn（runtime=agent）→ spawnTeammate → POST /api/agents/register 绑定 session
-//   team_task 建任务 → sidecar 置 ready → POST /api/agents/dispatch 原子认领（running）
+//   dsh_team_spawn（runtime=agent）→ spawnTeammate → POST /api/agents/register 绑定 session
+//   dsh_team_task 建任务 → sidecar 置 ready → POST /api/agents/dispatch 原子认领（running）
 //                    → sendMessage(lead → member) 把任务说明投进成员信箱
-//   成员跑完 → team_report_task（精确摘要）/ agent/status=idle（兜底）→ 任务 done → evaluate 推进依赖
+//   成员跑完 → dsh_team_report_task（精确摘要）/ agent/status=idle（兜底）→ 任务 done → evaluate 推进依赖
 //            → 再跑一轮 dispatch，把新 ready 的任务投给 idle 成员
 
 /** teamId → 最近一次调用 team_* 工具的 Lead Agent（发消息必须由 live Lead 发出）。 */
@@ -661,7 +661,7 @@ function activationSpec(request, base) {
 // ---------- 模型路由：DSH ctx.llm 目录 → sidecar 映射 ----------
 //
 // 目录的唯一来源是 Host 的 ctx.llm；这里只把 provider/model 的映射、展示名和
-// 模态同步给 sidecar。sidecar 保存用户勾选的子集与备注，team_spawn 只接受
+// 模态同步给 sidecar。sidecar 保存用户勾选的子集与备注，dsh_team_spawn 只接受
 // 启用项。本插件不代理 LLM 请求、不保存任何凭据。
 const llmOf = (ctx) => { try { return ctx.get('llm'); } catch { return undefined; } };
 
@@ -690,7 +690,7 @@ async function effortsOfRoute(llm, provider, model) {
   ]);
   const reasoning = info && info.reasoning;
   if (!reasoning || !Array.isArray(reasoning.efforts)) return undefined;
-  // 「off」等于关思考，不是可派发的强度：既不进面板胶囊，也不进 team_models，
+  // 「off」等于关思考，不是可派发的强度：既不进面板胶囊，也不进 dsh_team_models，
   // 否则用户能「允许派发 off」而实际语义相反。
   const efforts = reasoning.efforts
     .filter((e) => e && e.id && String(e.id) !== 'off')
@@ -754,7 +754,7 @@ async function syncLlmCatalog(s, ctx) {
       }
     }
     // 只上报真正能列出模型的 provider；没模型的（含未配置的 dormant）不进目录，
-    // 面板与 team_models 就不会出现空分组。
+    // 面板与 dsh_team_models 就不会出现空分组。
     const withModels = providers.filter((p) => models.some((m) => m.provider === p.id));
     if (!withModels.length) return { ok: true, providers: 0, models: 0, empty: true };
     await request(s, '/api/llm/catalog', { method: 'POST', body: { providers: withModels, models, partial } });
@@ -788,15 +788,15 @@ async function assertRouteEnabled(s, ctx, provider, model, effort = null) {
     // `no adapter registered for provider "glm-5.3"`，白起一轮；这里提前拦。
     const owners = [...new Set(all.filter((m) => !model || m.model === model).map((m) => m.provider))];
     if (provider && model && owners.length && !owners.includes(provider)) {
-      throw new Error(`agentProvider「${provider}」不是模型「${model}」所属的 provider：应填 ${owners.join(' 或 ')}。agentProvider 要的是 provider id（见 team_models），不是模型名。`);
+      throw new Error(`agentProvider「${provider}」不是模型「${model}」所属的 provider：应填 ${owners.join(' 或 ')}。agentProvider 要的是 provider id（见 dsh_team_models），不是模型名。`);
     }
     return;
   }
   const enabled = all.filter((m) => m.enabled);
-  if (!enabled.length) throw new Error('所有模型路由都已停用：请先在面板「模型路由」页启用，或调用 team_models 查看。');
+  if (!enabled.length) throw new Error('所有模型路由都已停用：请先在面板「模型路由」页启用，或调用 dsh_team_models 查看。');
   if (!known.some((m) => m.enabled)) {
     const sample = enabled.slice(0, 8).map((m) => `${m.provider}/${m.model}`).join(', ');
-    throw new Error(`模型路由未启用：${[provider, model].filter(Boolean).join('/')}。可用（前 8 条）：${sample}。完整列表见 team_models，或在面板「模型路由」页启用。`);
+    throw new Error(`模型路由未启用：${[provider, model].filter(Boolean).join('/')}。可用（前 8 条）：${sample}。完整列表见 dsh_team_models，或在面板「模型路由」页启用。`);
   }
   // effort 闸门：只有该 route 声明了 efforts 才校验；allowedEfforts=null 表示全部允许。
   if (!effort) return;
@@ -829,14 +829,14 @@ function rememberMember(sessionId, teamId, memberId, cwd, permissionPreset = nul
 
 async function teamOf(s, teamId, { refresh = false, sessionId = null } = {}) {
   // 模型偶尔会漏掉必填的 teamId。先显式挡住，避免 /api/teams/undefined 被误报成「团队不存在」；
-  // 同一会话内 team_create 过的团队可以直接兜底（DSH 对直接注册的工具不做 required 运行时校验）。
+  // 同一会话内 dsh_team_create 过的团队可以直接兜底（DSH 对直接注册的工具不做 required 运行时校验）。
   const missing = teamId == null || String(teamId).trim() === '' || String(teamId) === 'undefined' || String(teamId) === 'null';
   if (missing && sessionId) {
     const bound = sessionMember.get(String(sessionId))?.teamId || teamBySession.get(String(sessionId));
     if (bound) teamId = bound;
   }
   if (teamId == null || String(teamId).trim() === '' || String(teamId) === 'undefined' || String(teamId) === 'null') {
-    throw new Error('缺少 teamId：请把 team_create 返回的 result.team.id（形如 team_xxx）作为 teamId 参数传入后重试。');
+    throw new Error('缺少 teamId：请把 dsh_team_create 返回的 result.team.id（形如 team_xxx）作为 teamId 参数传入后重试。');
   }
   const key = String(teamId);
   if (!refresh && teamCache.has(key)) return teamCache.get(key);
@@ -846,7 +846,7 @@ async function teamOf(s, teamId, { refresh = false, sessionId = null } = {}) {
     return team;
   } catch (err) {
     if (err && err.status === 404) {
-      throw new Error(`团队不存在或 teamId 无效: ${key}（teamId 来自 team_create 返回值，请核对后重试）`);
+      throw new Error(`团队不存在或 teamId 无效: ${key}（teamId 来自 dsh_team_create 返回值，请核对后重试）`);
     }
     throw err;
   }
@@ -890,7 +890,7 @@ async function resolveAgentPreset(ctx, requested, fallback, store = null) {
  * 宿主默认 agentPreset 的 id。
  *
  * DSH 的 subagent 在 request 里省略 agentPreset 时，会继承父会话的实时组合
- * （`composeFrom(parent)`），并不会自动套用宿主默认。因此 team_spawn 必须显式
+ * （`composeFrom(parent)`），并不会自动套用宿主默认。因此 dsh_team_spawn 必须显式
  * 把默认预设传下去，否则成员就只能拿到 Lead 根组合里的宿主级工具（比如没有 shell）。
  */
 async function hostDefaultAgentPreset(ctx) {
@@ -912,7 +912,7 @@ async function hostDefaultAgentPreset(ctx) {
 // ---------------------------------------------------------------------------
 // Leader 自建 agentPreset
 //
-// 内置 preset 不满足时，Lead 用 team_preset({action:'save'}) 把一份组合定义写到固定目录，
+// 内置 preset 不满足时，Lead 用 dsh_team_preset({action:'save'}) 把一份组合定义写到固定目录，
 // 并立刻调用宿主 `agentPresets.register()` 生效（无需重启 DSH）。目录里的 JSON 文档
 // （JSON 是合法 YAML）在插件启动时也会被重新注册，因此跨会话可复用。
 // ---------------------------------------------------------------------------
@@ -1150,11 +1150,11 @@ function taskBrief(teamId, task, member) {
     '',
     '执行要求：',
     '1) 直接在本会话里做这件事（用你自己的工具，不要委派给别的 agent）。',
-    '2) 每开始或完成一步、以及验收通过后，调用 team_todo 更新该任务的计划清单（teamId/taskId 同上）。',
-    '3) 收工前，如果这次任务产生了对后续任务可复用的结论（接口约定、坑、决策理由、未决问题），调用 team_memory_write 存一条简短 handoff（scope="member"，kind="handoff"，value 不超过 300 字）；没有可复用结论就跳过，不要为了留记忆而写。只有 Lead 明确要求上传时才写 scope="team"。',
-    '4) 完成或失败后必须调用 team_report_task，例如：',
-    `   team_report_task({ teamId: "${teamId}", taskId: "${task.id}", status: "done", summary: "一句话结果 + 关键产物路径" })`,
-    '5) 需要 Lead 决策或补充信息时用 team_send（teamId 同上，to: "lead"），不要自己猜测。',
+    '2) 每开始或完成一步、以及验收通过后，调用 dsh_team_todo 更新该任务的计划清单（teamId/taskId 同上）。',
+    '3) 收工前，如果这次任务产生了对后续任务可复用的结论（接口约定、坑、决策理由、未决问题），调用 dsh_team_memory_write 存一条简短 handoff（scope="member"，kind="handoff"，value 不超过 300 字）；没有可复用结论就跳过，不要为了留记忆而写。只有 Lead 明确要求上传时才写 scope="team"。',
+    '4) 完成或失败后必须调用 dsh_team_report_task，例如：',
+    `   dsh_team_report_task({ teamId: "${teamId}", taskId: "${task.id}", status: "done", summary: "一句话结果 + 关键产物路径" })`,
+    '5) 需要 Lead 决策或补充信息时用 dsh_team_send（teamId 同上，to: "lead"），不要自己猜测。',
   ].join('\n');
 }
 
@@ -1231,7 +1231,7 @@ async function dispatchLoop(s, ctx, teamId) {
   }
 }
 
-// ---------- 权限审批转发：成员 preset 触发 approval/request → Lead 用 team_approve 决定 ----------
+// ---------- 权限审批转发：成员 preset 触发 approval/request → Lead 用 dsh_team_approve 决定 ----------
 const pendingApprovals = new Map();
 
 // 审批分类：approval/request 只带 toolName 与 callId，不带命令参数；
@@ -1400,7 +1400,7 @@ async function notifyLeadOfApproval(s, ctx, req, info) {
     `requestId=${info.requestId}`,
     '',
     `成员因 permissionPreset「${info.preset || 'unknown'}」的审批策略暂停，等待你决定。`,
-    `批准本次操作：team_approve({ teamId: "${info.teamId}", requestId: "${info.requestId}", decision: "allow" })`,
+    `批准本次操作：dsh_team_approve({ teamId: "${info.teamId}", requestId: "${info.requestId}", decision: "allow" })`,
     `拒绝：把 decision 改成 "deny"（可加 reason）。`,
     `超过 ${minutes} 分钟未决定将自动拒绝。`,
   ].join('\n');
@@ -1453,10 +1453,10 @@ async function notifyLeadOfMemberInterrupt(s, ctx, info) {
       ? '该成员的回合以错误结束，任务按失败重试策略处理（可能已重新派发）；反复失败需要你介入。'
       : '该成员没有正常收工，任务不会被当成完成；中断后它需要你确认才能继续。',
     info.status === 'failed'
-      ? `下一步：team_status({ teamId: "${teamId}" }) 看进度；需要人工接手时用 team_task/team_member 调整。`
+      ? `下一步：dsh_team_status({ teamId: "${teamId}" }) 看进度；需要人工接手时用 dsh_team_task/dsh_team_member 调整。`
       : (info.memberId
-        ? `下一步：team_status({ teamId: "${teamId}" }) 看进度；确认后 team_control({ teamId: "${teamId}", memberId: "${info.memberId}", action: "resume" }) 继续。`
-        : `下一步：team_status({ teamId: "${teamId}" }) 看进度；确认后 team_dispatch 重新派发。`),
+        ? `下一步：dsh_team_status({ teamId: "${teamId}" }) 看进度；确认后 dsh_team_control({ teamId: "${teamId}", memberId: "${info.memberId}", action: "resume" }) 继续。`
+        : `下一步：dsh_team_status({ teamId: "${teamId}" }) 看进度；确认后 dsh_team_dispatch 重新派发。`),
   ];
   try {
     await sendAgentMessage(ctx, sender, leadId, lines.join('\n'), {
@@ -1739,7 +1739,7 @@ async function forceStopPump(s, ctx) {
 const TODO_TO_PLAN = { pending: 'open', in_progress: 'active', completed: 'done' };
 
 /**
- * 成员没用 team_todo、而是用了内置 todo_write 时，把 DSH 的 `todos` 投影镜像成 sidecar 计划。
+ * 成员没用 dsh_team_todo、而是用了内置 todo_write 时，把 DSH 的 `todos` 投影镜像成 sidecar 计划。
  * todo_write 每次整份替换，这里也整份替换（POST /api/tasks/<taskId>/todos），
  * 于是「todo 完成 → 计划步骤完成」自动同步，面板与团队校验都能看到成员的真实 plan。
  */
@@ -1870,7 +1870,7 @@ function assistantReplyText(message) {
 
 /**
  * 把成员这一轮的结论作为 member→lead 的消息落库（kind=response）。
- * 成员用 send_message / team_report_task 回话都不经过消息总线，面板里只剩 Lead 单向提问；
+ * 成员用 send_message / dsh_team_report_task 回话都不经过消息总线，面板里只剩 Lead 单向提问；
  * 收工时补一条回复，【消息与回执】才能配对成双向箭头并展示两条正文。
  */
 async function flushMemberReply(s, sessionId) {
@@ -2096,11 +2096,11 @@ async function boardApplyExecutionModel(ctx, agent, task, settings) {
  * 触发 prewalk 交接的「实现动作」。
  *
  * 对齐官方语义：不在计划提交时切换，而是等规划模型在同一条会话里落下第一笔实现
- * 动作之后（首个 edit/write 类工具结果；团队任务则是 Lead 的首次 team_task 派发），
+ * 动作之后（首个 edit/write 类工具结果；团队任务则是 Lead 的首次 dsh_team_task 派发），
  * 再把剩下的活交给执行模型，避免便宜模型接手后才发现计划不可执行。
  */
 const PREWALK_EDIT_TOOLS = new Set(['write', 'edit', 'str_replace_editor']);
-const PREWALK_DISPATCH_TOOLS = new Set(['team_task']);
+const PREWALK_DISPATCH_TOOLS = new Set(['dsh_team_task']);
 
 /** 执行阶段已武装、等待首次实现动作的会话：sessionId → { task, settings }。 */
 const prewalkArmed = new Map();
@@ -2231,7 +2231,7 @@ function boardBranchLines(task) {
 
 function boardPlanningPrompt(task, settings) {
   const useTeam = task.useTeam !== false;
-  // 同会话模式：规划与执行是同一个会话，board_plan_submit 会直接领执行槽位，
+  // 同会话模式：规划与执行是同一个会话，dsh_team_board_plan_submit 会直接领执行槽位，
   // 所以执行规则从一开始就写进规划 prompt，提交后不再补发「现在开始执行」。
   const sameSession = task.executionMode === 'same';
   const models = boardPromptModels(task);
@@ -2241,7 +2241,7 @@ function boardPlanningPrompt(task, settings) {
       ? '这一轮先只做规划，不要写代码、不要修改文件、不要创建团队。'
       : '只做规划，不写代码、不修改文件、不创建团队。',
     sameSession
-      ? '计划提交后读取 board_plan_submit 的返回：status 是 inprogress 就直接在同一会话里按计划开始执行（此时可以写文件、可以调用 team_*）；status 是 planned 说明执行槽位已满，立刻停下等待调度器。'
+      ? '计划提交后读取 dsh_team_board_plan_submit 的返回：status 是 inprogress 就直接在同一会话里按计划开始执行（此时可以写文件、可以调用 team_*）；status 是 planned 说明执行槽位已满，立刻停下等待调度器。'
       : '规划完成后不要开始执行；调度器会在执行槽位空出后，在同一会话里让你继续。',
     '',
     `工作区：${task.workspacePath}`,
@@ -2275,7 +2275,7 @@ function boardPlanningPrompt(task, settings) {
     ...head,
     ...body,
     '',
-    '最后必须调用 board_plan_submit({ plan: "<完整 markdown>", summary: "<一句话>" })。',
+    '最后必须调用 dsh_team_board_plan_submit({ plan: "<完整 markdown>", summary: "<一句话>" })。',
     '不要只把计划写在回复里。',
     ...(sameSession
       ? ['', '提交后如果返回 inprogress，继续按下面的规则执行；返回 planned 则忽略这些规则并停下：', '', ...boardLeadRules(task)]
@@ -2287,21 +2287,21 @@ function boardLeadRules(task) {
   const useTeam = task.useTeam !== false;
   const models = boardPromptModels(task);
   // 任务已有关联团队（重试、失败后继续、或完成后再次执行）时，在原团队上接着干，
-  // 不要每轮都 team_create 出一个新团队。
+  // 不要每轮都 dsh_team_create 出一个新团队。
   const teams = Array.isArray(task.teams) ? task.teams.filter(Boolean).map(String) : [];
   const teamRule = teams.length
-    ? `1. 本任务已关联团队：${teams.join('、')}。不要调用 team_create 新建团队：先 team_status 查看这些团队的现状，`
-      + '在原团队里用 team_task 追加剩余工作继续推进；已经完成的成员任务不要重复创建。'
-      + '只有原团队已被删除或全部不可用时，才允许 team_create 新团队（若既有团队需要继续保留、只是要并行新建，必须显式传 force: true）。'
-    : '1. 先调用 team_create 创建团队；name 用任务标题，workspace 用上面的路径。需要多个团队就多次创建，所有团队都会自动绑定到本任务。';
+    ? `1. 本任务已关联团队：${teams.join('、')}。不要调用 dsh_team_create 新建团队：先 dsh_team_status 查看这些团队的现状，`
+      + '在原团队里用 dsh_team_task 追加剩余工作继续推进；已经完成的成员任务不要重复创建。'
+      + '只有原团队已被删除或全部不可用时，才允许 dsh_team_create 新团队（若既有团队需要继续保留、只是要并行新建，必须显式传 force: true）。'
+    : '1. 先调用 dsh_team_create 创建团队；name 用任务标题，workspace 用上面的路径。需要多个团队就多次创建，所有团队都会自动绑定到本任务。';
   // 用户嘴里的「新任务」经常被 Lead 误当成当前团队的 DAG 节点：先强制做归属判断。
   const scopeRules = [
     '先判断用户这次说的事是不是「新任务」：',
     '- 同一目标 / 同一模块或文件 / 同一验收 / 同一分支 → 是本任务的一部分，在本任务（或本团队）里继续推进。',
-    '- 交付物或验收不同、需要单独分支或单独规划、做完之后不再依赖本任务上下文 → 这是独立的一件事：调用 board_task_create 给它建一张看板卡（workspaceId / workspacePath 沿用本任务），不要用 team_task 塞进当前团队。',
-    '- 用户明确说「建看板任务 / 加一张卡 / 单开一个会话」→ 一律 board_task_create，禁止 team_task。',
+    '- 交付物或验收不同、需要单独分支或单独规划、做完之后不再依赖本任务上下文 → 这是独立的一件事：调用 dsh_team_board_task_create 给它建一张看板卡（workspaceId / workspacePath 沿用本任务），不要用 dsh_team_task 塞进当前团队。',
+    '- 用户明确说「建看板任务 / 加一张卡 / 单开一个会话」→ 一律 dsh_team_board_task_create，禁止 dsh_team_task。',
     '- 判断不清就先问用户一句「这算当前任务的一部分，还是另开一张卡？」，不要猜。',
-    '记住：team_task 只拆解当前任务，它不会出现在用户的看板上；用户说的「任务」通常指看板卡片。',
+    '记住：dsh_team_task 只拆解当前任务，它不会出现在用户的看板上；用户说的「任务」通常指看板卡片。',
   ];
   const teamRules = [
     '开始执行前，先加载 `dsh-agent-team` 技能（调用 skill 工具，参数 {"name":"dsh-agent-team"}），按技能里的团队编排流程、工具字段与常见错法执行，不要凭记忆猜参数。',
@@ -2310,22 +2310,22 @@ function boardLeadRules(task) {
     '',
     '规则：',
     teamRule,
-    '2. 调用 team_models 查看可用路由；只能使用以下模型：',
+    '2. 调用 dsh_team_models 查看可用路由；只能使用以下模型：',
     models,
-    '3. 用 team_task 拆解并派发；用 team_status / team_report 跟踪。不要自己写代码，不要重复成员的工作。成员按能力域分配：同一模块/相邻功能、或一个成员能顺手做完的多个条目，合并给同一个成员；成员数取能完成工作的最小值，不要按需求条目数量等量创建成员。',
-    '4. 用户反馈 Bug 时，不要自己去读代码排查：先判断归属成员，用 team_send 把复现步骤与怀疑点派给对应成员定位、修复；你只做分派、汇总与状态汇报。',
-    '5. 每轮结束前必须先调用 board_task_status 对齐状态：全部任务成功→done（附完成摘要），失败→failed（附原因），仍需继续或等待用户→inprogress。不能只在开始时调用一次。',
-    '6. 用户再次发消息时，先调用 board_task_status({ status: "inprogress" })，再继续处理。',
+    '3. 用 dsh_team_task 拆解并派发；用 dsh_team_status / dsh_team_report 跟踪。不要自己写代码，不要重复成员的工作。成员按能力域分配：同一模块/相邻功能、或一个成员能顺手做完的多个条目，合并给同一个成员；成员数取能完成工作的最小值，不要按需求条目数量等量创建成员。',
+    '4. 用户反馈 Bug 时，不要自己去读代码排查：先判断归属成员，用 dsh_team_send 把复现步骤与怀疑点派给对应成员定位、修复；你只做分派、汇总与状态汇报。',
+    '5. 每轮结束前必须先调用 dsh_team_board_task_status 对齐状态：全部任务成功→done（附完成摘要），失败→failed（附原因），仍需继续或等待用户→inprogress。不能只在开始时调用一次。',
+    '6. 用户再次发消息时，先调用 dsh_team_board_task_status({ status: "inprogress" })，再继续处理。',
   ];
   const soloRules = [
-    '本任务不开启团队：由你自己直接完成所有工作，不要调用 team_create / team_spawn / team_task。',
+    '本任务不开启团队：由你自己直接完成所有工作，不要调用 dsh_team_create / dsh_team_spawn / dsh_team_task。',
     '',
     ...scopeRules,
     '',
     '规则：',
     '1. 按任务描述直接修改文件、运行命令并验证结果。',
-    '2. 每轮结束前必须先调用 board_task_status 对齐状态：全部完成→done（附完成摘要），失败→failed（附原因），仍需继续或等待用户→inprogress。不能只在开始时调用一次。',
-    '3. 用户再次发消息时，先调用 board_task_status({ status: "inprogress" })，再继续处理。',
+    '2. 每轮结束前必须先调用 dsh_team_board_task_status 对齐状态：全部完成→done（附完成摘要），失败→failed（附原因），仍需继续或等待用户→inprogress。不能只在开始时调用一次。',
+    '3. 用户再次发消息时，先调用 dsh_team_board_task_status({ status: "inprogress" })，再继续处理。',
   ];
   return useTeam ? teamRules : soloRules;
 }
@@ -2394,8 +2394,8 @@ async function guardBoardTeamReuse(s, sessionId, force) {
   }
   if (!alive.length) return;
   throw new Error(
-    `本任务已关联团队：${alive.join('、')}。重试/续跑请在原团队上继续：先用 team_status 查看现状，再用 team_task 追加剩余工作，不要重复 team_create。`
-    + '确实需要与之并行新建团队时，调用 team_create 并显式传 force: true。',
+    `本任务已关联团队：${alive.join('、')}。重试/续跑请在原团队上继续：先用 dsh_team_status 查看现状，再用 dsh_team_task 追加剩余工作，不要重复 dsh_team_create。`
+    + '确实需要与之并行新建团队时，调用 dsh_team_create 并显式传 force: true。',
   );
 }
 
@@ -2632,16 +2632,16 @@ function buildTools(s, ctx) {
   const tools = [];
 
   tools.push({
-    name: 'team_create',
-    description: 'START HERE to build a working team of agents. Order: team_create({name, workspace, permissionPreset?}) → team_models() to see the enabled provider/model routes → team_spawn({teamId, name, prompt, agentProvider?, model?, reasoningEffort?, permissionPreset?}) once per member, choosing a cheap/fast route for mechanical work and a strong-reasoning route for architecture, debugging, or review → team_task({teamId, subject, assignee?, plan, acceptance}) per DAG node → each member finishes by calling team_report_task → inspect with team_status / team_report. Every member is a real DSH sub-agent session (own model, tools, context, message inbox). `permissionPreset` decides the member sandbox + approval policy (DSH permission presets, e.g. workspace-write or danger-full-access); the team value is the default and team_spawn can override it per member. When a member hits an operation its preset requires approval for, the approval is forwarded to the Lead, who decides with team_approve. `workspace` is an absolute directory shared by the members and becomes their cwd. Keep teamId from this response (result.team.id): every later call needs it. Spawn members by capability domain, not one per requirement item: one member can own several related team_task items, so keep the member count at the minimum needed. For the full recipe with per-field pitfalls, load the skill "dsh-agent-team".',
+    name: 'dsh_team_create',
+    description: 'START HERE to build a working team of agents. Order: dsh_team_create({name, workspace, permissionPreset?}) → dsh_team_models() to see the enabled provider/model routes → dsh_team_spawn({teamId, name, prompt, agentProvider?, model?, reasoningEffort?, permissionPreset?}) once per member, choosing a cheap/fast route for mechanical work and a strong-reasoning route for architecture, debugging, or review → dsh_team_task({teamId, subject, assignee?, plan, acceptance}) per DAG node → each member finishes by calling dsh_team_report_task → inspect with dsh_team_status / dsh_team_report. Every member is a real DSH sub-agent session (own model, tools, context, message inbox). `permissionPreset` decides the member sandbox + approval policy (DSH permission presets, e.g. workspace-write or danger-full-access); the team value is the default and dsh_team_spawn can override it per member. When a member hits an operation its preset requires approval for, the approval is forwarded to the Lead, who decides with dsh_team_approve. `workspace` is an absolute directory shared by the members and becomes their cwd. Keep teamId from this response (result.team.id): every later call needs it. Spawn members by capability domain, not one per requirement item: one member can own several related dsh_team_task items, so keep the member count at the minimum needed. For the full recipe with per-field pitfalls, load the skill "dsh-agent-team".',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
         name: { type: 'string', description: 'Team name.' },
         workspace: { type: 'string', description: 'Absolute directory shared by members; created if missing.' },
-        permissionPreset: { type: 'string', description: 'Default DSH permission preset for members (sandbox + approval policy). Default workspace-write. team_spawn can override it per member.' },
-        agentPreset: { type: 'string', description: 'Default DSH agent preset (composition: tools/skills/MCP + system prompt) for members. Omit to use the host default. team_spawn can override it per member.' },
+        permissionPreset: { type: 'string', description: 'Default DSH permission preset for members (sandbox + approval policy). Default workspace-write. dsh_team_spawn can override it per member.' },
+        agentPreset: { type: 'string', description: 'Default DSH agent preset (composition: tools/skills/MCP + system prompt) for members. Omit to use the host default. dsh_team_spawn can override it per member.' },
         maxMembers: { type: 'integer', description: 'Member cap, 0 means unlimited. Default 64. Extra members are queued, never errors.' },
         maxConcurrency: { type: 'integer', description: 'Max simultaneously running tasks. Default 8.' },
         failurePolicy: { type: 'string', enum: ['continue', 'abort'], description: 'Team-level default failure policy.' },
@@ -2671,7 +2671,7 @@ function buildTools(s, ctx) {
       });
       teamCache.set(team.id, team);
       if (exec?.agent) leadByTeam.set(team.id, exec.agent);
-      // 会话级粘性绑定：即使后续 team_spawn 漏传 teamId，也能解析到本会话刚建的团队。
+      // 会话级粘性绑定：即使后续 dsh_team_spawn 漏传 teamId，也能解析到本会话刚建的团队。
       if (exec?.agent?.id != null) teamBySession.set(String(exec.agent.id), String(team.id));
       await bindBoardTeam(s, exec, team.id);
       return { team, panel: panelUrl(s) };
@@ -2679,22 +2679,22 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'team_spawn',
-    description: "Add one member to a team; returns the member `id` you use as team_task's `assignee`. This SPAWNS A REAL DSH SUB-AGENT session (`subagents.startActivation`, continuable child) that owns its own model, context, tools and message inbox; `prompt` is required and becomes the member's first instruction — the member cannot see your conversation, so state the team id, its job, the workspace, and end with: finish by calling team_report_task({teamId, taskId, status, summary}). Over the member cap the member becomes `queued` instead of failing. Members are reusable: they run one task at a time and return to `idle`. Model routing: call team_models first, then pass `agentProvider` + `model` to fit the task — a cheap/fast route for mechanical edits and lookups, a strong-reasoning route for architecture, debugging, or review. Pass `reasoningEffort` when the model exposes one; omitting it inherits the Lead's effort only while the route stays the same, otherwise the model's default applies. Omit agentProvider/model to inherit the Lead's route. `permissionPreset` overrides the team default for this member (sandbox + approval policy); approval-required operations are forwarded to the Lead via team_approve.",
+    name: 'dsh_team_spawn',
+    description: "Add one member to a team; returns the member `id` you use as dsh_team_task's `assignee`. This SPAWNS A REAL DSH SUB-AGENT session (`subagents.startActivation`, continuable child) that owns its own model, context, tools and message inbox; `prompt` is required and becomes the member's first instruction — the member cannot see your conversation, so state the team id, its job, the workspace, and end with: finish by calling dsh_team_report_task({teamId, taskId, status, summary}). Over the member cap the member becomes `queued` instead of failing. Members are reusable: they run one task at a time and return to `idle`. Model routing: call dsh_team_models first, then pass `agentProvider` + `model` to fit the task — a cheap/fast route for mechanical edits and lookups, a strong-reasoning route for architecture, debugging, or review. Pass `reasoningEffort` when the model exposes one; omitting it inherits the Lead's effort only while the route stays the same, otherwise the model's default applies. Omit agentProvider/model to inherit the Lead's route. `permissionPreset` overrides the team default for this member (sandbox + approval policy); approval-required operations are forwarded to the Lead via dsh_team_approve.",
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
-        teamId: { type: 'string', description: 'team_create 返回的 result.team.id（形如 team_xxx）。漏传时自动使用当前会话刚创建的团队。' },
+        teamId: { type: 'string', description: 'dsh_team_create 返回的 result.team.id（形如 team_xxx）。漏传时自动使用当前会话刚创建的团队。' },
         name: { type: 'string', description: 'Unique member name inside the team; this is the addressable target.' },
         role: { type: 'string', description: 'Role label shown on the panel.' },
         permissionPreset: { type: 'string', description: "DSH permission preset for this member (sandbox + approval policy). Defaults to the team's permissionPreset." },
         agentPreset: { type: 'string', description: "DSH agent preset (composition: tools/skills/MCP + system prompt). Defaults to the team's agentPreset; omit both to join the host default. Only supported with contextMode 'fresh' (the fork provider inherits the Lead's composition)." },
-        agentProvider: { type: 'string', description: 'LLM provider route id, as returned by team_models. Omit to inherit the Lead\'s provider. Must be an enabled route in the team panel.' },
-        model: { type: 'string', description: 'LLM model id, as returned by team_models. Changing the route clears inherited reasoning effort unless reasoningEffort is set explicitly.' },
+        agentProvider: { type: 'string', description: 'LLM provider route id, as returned by dsh_team_models. Omit to inherit the Lead\'s provider. Must be an enabled route in the team panel.' },
+        model: { type: 'string', description: 'LLM model id, as returned by dsh_team_models. Changing the route clears inherited reasoning effort unless reasoningEffort is set explicitly.' },
         reasoningEffort: { type: 'string', description: 'Adapter-defined reasoning effort id (for example low / medium / high, when the model supports them). Omit to inherit the Lead\'s effort while the route is unchanged; a changed route falls back to the model default.' },
         contextMode: { type: 'string', enum: ['isolated', 'fresh', 'fork'], description: 'Context isolation: `fresh` starts with no Lead history, `fork` inherits completed Lead turns. Default isolated/fresh.' },
-        prompt: { type: 'string', description: 'The member’s first instruction. Tell it its role, workspace, and that it must call team_report_task when done.' },
+        prompt: { type: 'string', description: 'The member’s first instruction. Tell it its role, workspace, and that it must call dsh_team_report_task when done.' },
         description: { type: 'string', description: 'One-line description of what this member is responsible for.' },
       },
       required: ['teamId', 'name', 'prompt'],
@@ -2711,8 +2711,8 @@ function buildTools(s, ctx) {
         throw new Error('subagents 服务不可用：无法创建 sub-agent 成员（需要宿主启用 dsh-subagent）。');
       }
       const caller = exec?.agent;
-      if (!caller) throw new Error('team_spawn 需要 Lead 会话上下文（exec.agent 缺失：不能在非 agent 调用里起成员）。');
-      if (!args.prompt) throw new Error('team_spawn 需要 prompt（成员的初始指令）。');
+      if (!caller) throw new Error('dsh_team_spawn 需要 Lead 会话上下文（exec.agent 缺失：不能在非 agent 调用里起成员）。');
+      if (!args.prompt) throw new Error('dsh_team_spawn 需要 prompt（成员的初始指令）。');
 
       const context = args.contextMode === 'fork' ? 'fork' : 'fresh';
       // 省略 preset 时 DSH 继承 Lead 的实时组合，不会套宿主默认；
@@ -2774,7 +2774,7 @@ function buildTools(s, ctx) {
         label: memberLabel(memberName, description),
         signal: exec.signal || AbortSignal.timeout(s.requestTimeoutMs),
       }));
-      // 成员跑的是一整轮 agent loop，结果由 team_report_task 汇报；这里只防止未处理的 rejection。
+      // 成员跑的是一整轮 agent loop，结果由 dsh_team_report_task 汇报；这里只防止未处理的 rejection。
       if (started && started.result && typeof started.result.catch === 'function') started.result.catch(() => {});
       // 子会话发布后立刻把 preset 落到会话（会覆盖 subagent 继承来的 approval=never）。
       const presetResult = applyPermissionPreset(ctx, sessionId, permissionPreset);
@@ -2824,8 +2824,8 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'team_models',
-    description: 'List the model routes enabled for this team: provider id, model id, display name, note, providerNote (the vendor-level strength the user wrote, e.g. "适合逻辑处理" / "适合做设计"), and modalities. Use it before team_spawn when a task should run on a different model or reasoning effort than the Lead — a cheap/fast route for mechanical work, a strong-reasoning route for architecture, debugging, or review. Only the user-enabled subset is listed; the panel curates it. Pass a listed pair to team_spawn({ agentProvider, model, reasoningEffort }).',
+    name: 'dsh_team_models',
+    description: 'List the model routes enabled for this team: provider id, model id, display name, note, providerNote (the vendor-level strength the user wrote, e.g. "适合逻辑处理" / "适合做设计"), and modalities. Use it before dsh_team_spawn when a task should run on a different model or reasoning effort than the Lead — a cheap/fast route for mechanical work, a strong-reasoning route for architecture, debugging, or review. Only the user-enabled subset is listed; the panel curates it. Pass a listed pair to dsh_team_spawn({ agentProvider, model, reasoningEffort }).',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -2857,7 +2857,7 @@ function buildTools(s, ctx) {
         };
       });
       const hint = models.length
-        ? '在 team_spawn 里用 agentProvider + model；providerNote 是该厂商整体强项（用户填写的厂商备注），note 是单模型差异；'
+        ? '在 dsh_team_spawn 里用 agentProvider + model；providerNote 是该厂商整体强项（用户填写的厂商备注），note 是单模型差异；'
           + 'efforts 是该 route 允许派发的 reasoningEffort 列表（省略时只在 route 不变时继承 Lead 的 effort，被禁止的 effort 会被拒绝）。'
         : '没有启用的模型路由：请让用户在面板「模型路由」页勾选需要的 provider/model。';
       return {
@@ -2870,8 +2870,8 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'team_preset',
-    description: 'Create, inspect, list, or delete team-owned agent presets when the host built-ins do not fit. A preset decides what a member OWNS (tool plugins, skill providers, MCP clients, persona/system prompt); permissionPreset decides what it MAY DO. action:list lists host presets plus presets the team already created; action:save writes one JSON document to the fixed team preset directory and registers it with the host immediately (no DSH restart), then the id can be passed to team_create({agentPreset}) / team_spawn({agentPreset}); action:show prints the saved document; action:delete removes a team-owned preset file and unregisters it (host built-ins are read-only). plugins must be a non-empty Cordis entry list, e.g. [{name:"@deepseek-ai/dsh-tool-fs"},{name:"@deepseek-ai/dsh-persona",config:{prefix:"You are a reviewer."}}]. Prefer copying the shape of an existing host preset: call team_preset({action:"show", id:"standard"}) and swap rows.',
+    name: 'dsh_team_preset',
+    description: 'Create, inspect, list, or delete team-owned agent presets when the host built-ins do not fit. A preset decides what a member OWNS (tool plugins, skill providers, MCP clients, persona/system prompt); permissionPreset decides what it MAY DO. action:list lists host presets plus presets the team already created; action:save writes one JSON document to the fixed team preset directory and registers it with the host immediately (no DSH restart), then the id can be passed to dsh_team_create({agentPreset}) / dsh_team_spawn({agentPreset}); action:show prints the saved document; action:delete removes a team-owned preset file and unregisters it (host built-ins are read-only). plugins must be a non-empty Cordis entry list, e.g. [{name:"@deepseek-ai/dsh-tool-fs"},{name:"@deepseek-ai/dsh-persona",config:{prefix:"You are a reviewer."}}]. Prefer copying the shape of an existing host preset: call dsh_team_preset({action:"show", id:"standard"}) and swap rows.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -2924,7 +2924,7 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'team_status',
+    name: 'dsh_team_status',
     description: 'Read a live snapshot instead of guessing progress. detail=summary returns every member with status/step/seq/percent/next/blockers/stale and its permissionPreset; detail=dag returns the task DAG with dependencies, readiness, joins and the critical path. `asOf` marks the snapshot time.',
     parameters: {
       type: 'object',
@@ -2972,13 +2972,13 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'team_task_get',
+    name: 'dsh_team_task_get',
     description: 'Read ONE DAG task of a team instead of the whole status: subject/status/assignee/attempts/maxAttempts/failurePolicy, its plan and acceptance, plus ledger node info (dependsOn, ready, blocked, blockers). Use it to confirm a task was dispatched, to check whether it is blocked on a dependency or a member, and to decide whether to retry or re-dispatch it. teamId is optional when the caller is already bound to that team.',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
-        taskId: { type: 'string', description: 'Task id returned by team_task (task_…).' },
+        taskId: { type: 'string', description: 'Task id returned by dsh_team_task (task_…).' },
         teamId: { type: 'string', description: 'Optional ownership check; inferred from the caller session when omitted.' },
       },
       required: ['taskId'],
@@ -2988,7 +2988,7 @@ function buildTools(s, ctx) {
     async execute(args) {
       const task = await request(s, `/api/tasks/${encodeURIComponent(args.taskId)}`);
       const teamId = String(args.teamId || task.teamId || '');
-      if (!teamId) throw new Error('team_task_get 无法确定 teamId：请显式传入');
+      if (!teamId) throw new Error('dsh_team_task_get 无法确定 teamId：请显式传入');
       if (args.teamId && String(task.teamId) !== String(args.teamId)) {
         throw new Error(`task ${task.id} 不属于 team ${args.teamId}`);
       }
@@ -3000,8 +3000,8 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'team_task',
-    description: 'Only for decomposing the CURRENT task: declare one task (DAG node) and hand it to a member. When the user asks for a new, separate task card (own deliverable or acceptance, own branch/session), use board_task_create instead — team_task items never appear on the board. The plan is a BRIEF sent to the member’s own sub-agent session, which does the work with its own tools and calls team_report_task when finished — write it self-contained (the member does not see this conversation). `assignee` takes a member **id** from team_spawn, not its name; omit it to let the scheduler pick an idle member. `deps[].from` takes a **task** id returned by an earlier team_task (member ids are rejected). The scheduler satisfies dependencies itself — never poll. The task dispatches immediately to an idle member once dependencies are satisfied; pass dispatch:false to build the DAG first.',
+    name: 'dsh_team_task',
+    description: 'Only for decomposing the CURRENT task: declare one task (DAG node) and hand it to a member. When the user asks for a new, separate task card (own deliverable or acceptance, own branch/session), use dsh_team_board_task_create instead — dsh_team_task items never appear on the board. The plan is a BRIEF sent to the member’s own sub-agent session, which does the work with its own tools and calls dsh_team_report_task when finished — write it self-contained (the member does not see this conversation). `assignee` takes a member **id** from dsh_team_spawn, not its name; omit it to let the scheduler pick an idle member. `deps[].from` takes a **task** id returned by an earlier dsh_team_task (member ids are rejected). The scheduler satisfies dependencies itself — never poll. The task dispatches immediately to an idle member once dependencies are satisfied; pass dispatch:false to build the DAG first.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -3017,7 +3017,7 @@ function buildTools(s, ctx) {
             type: 'object',
             additionalProperties: false,
             properties: {
-              from: { type: 'string', description: 'Upstream **task** id (starts with task_), taken from the team_task result — not a member id.' },
+              from: { type: 'string', description: 'Upstream **task** id (starts with task_), taken from the dsh_team_task result — not a member id.' },
               condition: { type: 'string', enum: ['all_success', 'any_success', 'on_failure', 'artifact_exists'] },
               artifactPath: { type: 'string', description: 'Workspace-relative path for condition=artifact_exists.' },
             },
@@ -3028,7 +3028,7 @@ function buildTools(s, ctx) {
         priority: { type: 'integer', description: 'Smaller runs first. Default 0.' },
         failurePolicy: { type: 'string', enum: ['continue', 'skip', 'abort_team', 'retry'] },
         maxAttempts: { type: 'integer' },
-        dispatch: { type: 'boolean', description: 'Dispatch immediately after creating (default true). Pass false to build the DAG first and dispatch later with team_dispatch.' },
+        dispatch: { type: 'boolean', description: 'Dispatch immediately after creating (default true). Pass false to build the DAG first and dispatch later with dsh_team_dispatch.' },
       },
       required: ['teamId', 'subject', 'plan'],
     },
@@ -3057,8 +3057,8 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'team_send',
-    description: "Send a message that a member will actually read: the text is injected into the target sub-agent's message inbox. By default a running member's current turn is interrupted first, so the message immediately starts a fresh turn instead of waiting for the next step boundary; pass `interrupt: false` to keep the current turn and deliver at the next step boundary. An idle member is woken. `to` is a member NAME (member id also accepted) or '*' to broadcast; use to:'lead' to reply to the Lead. Every send is also recorded on the sidecar so the panel shows the conversation. Returns delivery status only, never the member's reply: the reply arrives asynchronously as a new message in a later turn. Never wait for it with sleep/Start-Sleep/delayed scripts, polling loops, or repeated team_status calls — after sending, continue independent work or end the turn.",
+    name: 'dsh_team_send',
+    description: "Send a message that a member will actually read: the text is injected into the target sub-agent's message inbox. By default a running member's current turn is interrupted first, so the message immediately starts a fresh turn instead of waiting for the next step boundary; pass `interrupt: false` to keep the current turn and deliver at the next step boundary. An idle member is woken. `to` is a member NAME (member id also accepted) or '*' to broadcast; use to:'lead' to reply to the Lead. Every send is also recorded on the sidecar so the panel shows the conversation. Returns delivery status only, never the member's reply: the reply arrives asynchronously as a new message in a later turn. Never wait for it with sleep/Start-Sleep/delayed scripts, polling loops, or repeated dsh_team_status calls — after sending, continue independent work or end the turn.",
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -3085,7 +3085,7 @@ function buildTools(s, ctx) {
       const members = st?.members || [];
       const resolve = (v) => members.find((m) => m.name === v || m.id === v) || null;
       if (!toLead && args.to !== '*' && (members.length ? !resolve(args.to) : false)) {
-        throw new Error(`team_send: 找不到成员 ${args.to}（可用成员 name 或 memberId；广播用 '*'；给 Lead 留言用 to:"lead"）`);
+        throw new Error(`dsh_team_send: 找不到成员 ${args.to}（可用成员 name 或 memberId；广播用 '*'；给 Lead 留言用 to:"lead"）`);
       }
       const recorded = await request(s, '/api/messages', {
         method: 'POST',
@@ -3147,7 +3147,7 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'team_todo',
+    name: 'dsh_team_todo',
     description: '设置或更新一个任务的执行计划清单（todo）。与内置 todo_write 不同：这份清单落盘在 sidecar，面板主页 Plan 区域实时渲染，Lead 与成员都能看到（内置 todo 只属于当前会话）。语义是整体替换——每次提交完整清单（最多 50 条），用 status 标注进度：open（未开始）/ active（进行中）/ done（已完成）/ blocked（被阻塞）。Lead 在派发前/后用它给任务补计划；成员每开始或完成一步、以及通过验收后调用它更新状态。',
     parameters: {
       type: 'object',
@@ -3185,7 +3185,7 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'team_report_task',
+    name: 'dsh_team_report_task',
     description: 'Report the outcome of ONE task you were dispatched (agent members: call this as the last thing you do). It marks the task done/failed/blocked on the sidecar, releases the member back to idle, advances the DAG (dependents become ready and are dispatched), and applies the team failure policy. `summary` is what the Lead and the panel will see — put the result, key file paths and any blocker in it.',
     parameters: {
       type: 'object',
@@ -3234,7 +3234,7 @@ function buildTools(s, ctx) {
   };
 
   tools.push({
-    name: 'team_memory_write',
+    name: 'dsh_team_memory_write',
     description: 'Save ONE memory into the file-backed memory space (one JSON file per memory, never SQLite). scope=member writes the caller member\'s own space; scope=team writes the shared team space (use it when the Lead asks you to upload). Same (scope, team, owner, key) upserts and bumps version; pass expectedVersion for compare-and-set. Keep handoffs short (<=300 chars) and only save what is actually reusable — do NOT force a memory when the task produced nothing worth carrying.',
     parameters: {
       type: 'object',
@@ -3276,7 +3276,7 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'team_memory_read',
+    name: 'dsh_team_memory_read',
     description: 'Read ONE memory by id, or find the first matching memory by scope+key (and optional memberId). Memory ids are portable: a shared memory id can be passed to a member of another team. Returns the full value and version.',
     parameters: {
       type: 'object',
@@ -3307,7 +3307,7 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'team_memory_list',
+    name: 'dsh_team_memory_list',
     description: 'List memory metadata (slot/title/kind/source/updatedAt, no value body) for a team. Members see their own private memories + team-scope memories; the Lead sees all memories of the team; shared memories are visible across teams. Use q to search slot/title/tags/value text.',
     parameters: {
       type: 'object',
@@ -3335,7 +3335,7 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'team_memory_share',
+    name: 'dsh_team_memory_share',
     description: 'Change a memory\'s visibility: private (owner + team Lead), team (this team\'s members), shared (any team by id). The Lead uses this to hand a member\'s memory to other members; a member can share its own memory.',
     parameters: {
       type: 'object',
@@ -3358,7 +3358,7 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'team_memory_delete',
+    name: 'dsh_team_memory_delete',
     description: 'Delete ONE memory file permanently. The owner member or the team Lead may delete; team deletion does NOT cascade to memory files. Shared memory ids keep working across teams until deleted.',
     parameters: {
       type: 'object',
@@ -3376,8 +3376,8 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'team_dispatch',
-    description: 'Pump the agent-team dispatcher once: claim ready tasks for idle members and send each member its brief. Normally unnecessary — team_task dispatches automatically and team_report_task dispatches the next wave — but useful after team_control/resume, after approving a scope request, or when a member went idle without reporting. Safe to call repeatedly; it returns when no idle member or no ready task is left.',
+    name: 'dsh_team_dispatch',
+    description: 'Pump the agent-team dispatcher once: claim ready tasks for idle members and send each member its brief. Normally unnecessary — dsh_team_task dispatches automatically and dsh_team_report_task dispatches the next wave — but useful after dsh_team_control/resume, after approving a scope request, or when a member went idle without reporting. Safe to call repeatedly; it returns when no idle member or no ready task is left.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -3392,8 +3392,8 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'team_approve',
-    description: 'Decide a permission approval raised by a member. When a member runs an operation its permission preset requires approval for (sandbox escalation / write outside the sandbox), the DSH approval request is forwarded to the Lead and the member is paused. Read the requestId/member/tool/reason from the forwarded message, then call team_approve with decision "allow" (authorize this one operation) or "deny". Only the Lead of that team can decide. If nobody decides before the timeout, the request is rejected automatically.',
+    name: 'dsh_team_approve',
+    description: 'Decide a permission approval raised by a member. When a member runs an operation its permission preset requires approval for (sandbox escalation / write outside the sandbox), the DSH approval request is forwarded to the Lead and the member is paused. Read the requestId/member/tool/reason from the forwarded message, then call dsh_team_approve with decision "allow" (authorize this one operation) or "deny". Only the Lead of that team can decide. If nobody decides before the timeout, the request is rejected automatically.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -3408,7 +3408,7 @@ function buildTools(s, ctx) {
     output: jsonOutput('{ requestId, decision, memberId, toolName, reason }'),
     async execute(args, exec) {
       const requestId = String(args.requestId || '').trim();
-      if (!requestId) throw new Error('team_approve requires requestId');
+      if (!requestId) throw new Error('dsh_team_approve requires requestId');
       const entry = pendingApprovals.get(requestId);
       if (!entry) throw new Error('审批请求不存在或已处理（可能已超时）。请以成员收到的审批消息里的 requestId 为准。');
       if (String(entry.teamId) !== String(args.teamId)) throw new Error('teamId 与审批请求不匹配');
@@ -3424,7 +3424,7 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'team_control',
+    name: 'dsh_team_control',
     description: 'Control one member. interrupt stops the sub-agent’s current turn and pauses its in-flight task (no retry, no attempt consumed); resume re-arms it; assign hands a ready task to an idle member; abort permanently voids a task (taskId) without retry.',
     parameters: {
       type: 'object',
@@ -3441,7 +3441,7 @@ function buildTools(s, ctx) {
     output: jsonOutput('{ member, ... }'),
     async execute(args, exec) {
       if (args.action === 'abort') {
-        if (!args.taskId) throw new Error('team_control abort requires taskId');
+        if (!args.taskId) throw new Error('dsh_team_control abort requires taskId');
         const res = await request(s, `/api/tasks/${encodeURIComponent(args.taskId)}/abort`, { method: 'POST', body: { reason: args.reason || 'lead abort' } });
         if (!res?.wasRunning || !res?.member?.agentSessionId) return res;
         const sid = String(res.member.agentSessionId);
@@ -3457,7 +3457,7 @@ function buildTools(s, ctx) {
             (err) => ({ ok: false, error: String(err?.message || err) }));
         return { ...res, agent: interrupted };
       }
-      if (!args.memberId) throw new Error(`team_control ${args.action} requires memberId`);
+      if (!args.memberId) throw new Error(`dsh_team_control ${args.action} requires memberId`);
       const id = encodeURIComponent(args.memberId);
       if (args.action === 'interrupt') {
         const res = await request(s, `/api/members/${id}/interrupt`, { method: 'POST', body: { reason: args.reason || 'lead interrupt' } });
@@ -3489,15 +3489,15 @@ function buildTools(s, ctx) {
         return res;
       }
       if (args.action === 'assign') {
-        if (!args.taskId) throw new Error('team_control assign requires taskId');
+        if (!args.taskId) throw new Error('dsh_team_control assign requires taskId');
         return await request(s, `/api/members/${id}/assign`, { method: 'POST', body: { taskId: args.taskId } });
       }
-      throw new Error(`team_control unknown action: ${args.action}`);
+      throw new Error(`dsh_team_control unknown action: ${args.action}`);
     },
   });
 
   tools.push({
-    name: 'team_member',
+    name: 'dsh_team_member',
     description: "Update or remove a team member. `update` changes role/permission/model/context. `permissionPreset` (and `role`) applies to a RUNNING member immediately, no interrupt needed; changing model, agentProvider, contextMode, agentPreset or reasoningEffort rebuilds the member's DSH sub-agent session (old context is lost) and therefore requires the member to be idle or interrupted. `retire` keeps the member row as retired and frees capacity; `remove` deletes the row and requires confirm:true. Both release the sub-agent session.",
     parameters: {
       type: 'object',
@@ -3505,7 +3505,7 @@ function buildTools(s, ctx) {
       properties: {
         action: { type: 'string', enum: ['update', 'retire', 'remove'] },
         teamId: { type: 'string', description: 'Team id; omit to resolve from the current Lead session.' },
-        memberId: { type: 'string', description: 'Member id returned by team_spawn / team_status.' },
+        memberId: { type: 'string', description: 'Member id returned by dsh_team_spawn / dsh_team_status.' },
         role: { type: 'string', description: 'update: new role label.' },
         model: { type: 'string', description: 'update: new LLM model id (empty to inherit). Rebuilds the session.' },
         agentProvider: { type: 'string', description: 'update: new LLM provider route id. Rebuilds the session.' },
@@ -3526,7 +3526,7 @@ function buildTools(s, ctx) {
       if (current.teamId !== team.id) throw new Error('member 不属于指定团队');
 
       if (args.action === 'retire' || args.action === 'remove') {
-        if (args.action === 'remove' && args.confirm !== true) throw new Error('team_member remove requires confirm:true');
+        if (args.action === 'remove' && args.confirm !== true) throw new Error('dsh_team_member remove requires confirm:true');
         const mode = args.action === 'remove' ? 'remove' : 'retire';
         const res = await request(s, `/api/members/${id}?mode=${mode}${mode === 'remove' ? '&confirm=1' : ''}`, { method: 'DELETE' });
         let agent = null;
@@ -3543,7 +3543,7 @@ function buildTools(s, ctx) {
         return { ...res, agent, panel: panelUrl(s) };
       }
 
-      if (args.action !== 'update') throw new Error(`team_member unknown action: ${args.action}`);
+      if (args.action !== 'update') throw new Error(`dsh_team_member unknown action: ${args.action}`);
       if (current.status === 'retired') throw new Error('member is retired; create a new member instead');
 
       const has = (key) => Object.prototype.hasOwnProperty.call(args, key);
@@ -3578,7 +3578,7 @@ function buildTools(s, ctx) {
       const subs = subagentsOf(ctx);
       const caller = exec?.agent;
       if (!subs || typeof subs.startActivation !== 'function') throw new Error('subagents 服务不可用：无法重建成员会话');
-      if (!caller) throw new Error('team_member update 需要 Lead 会话上下文（exec.agent 缺失）');
+      if (!caller) throw new Error('dsh_team_member update 需要 Lead 会话上下文（exec.agent 缺失）');
 
       const leadRoute = leadRouteOf(caller);
       const oldRoute = {
@@ -3621,7 +3621,7 @@ function buildTools(s, ctx) {
 
       const sessionId = randomUUID();
       const started = await subs.startActivation(activationSpec({
-        prompt: [{ type: 'text', text: `你是团队成员 ${current.name}（${role || 'teammate'}）。配置刚刚更新，这是新的会话；当前没有任务，等待 Lead 派发。收到任务后按简报执行，完成时调用 team_report_task。` }],
+        prompt: [{ type: 'text', text: `你是团队成员 ${current.name}（${role || 'teammate'}）。配置刚刚更新，这是新的会话；当前没有任务，等待 Lead 派发。收到任务后按简报执行，完成时调用 dsh_team_report_task。` }],
         parent: caller,
         ...(team.workspace ? { cwd: team.workspace } : {}),
         ...(Object.keys(agentOptions).length ? { agentOptions } : {}),
@@ -3683,7 +3683,7 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'team_report',
+    name: 'dsh_team_report',
     description: 'Export a Markdown run report: members, tasks/DAG, permission approvals (who asked for what, who decided), and the audit table with actor, action, target, and full before/after SHA-256 hashes. Use it for review, handoff, or proving who changed which file.',
     parameters: {
       type: 'object',
@@ -3701,7 +3701,7 @@ function buildTools(s, ctx) {
 
 
   tools.push({
-    name: 'board_plan_submit',
+    name: 'dsh_team_board_plan_submit',
     description: 'Submit the finished plan for the current workspace-board task. Call this at the end of the planning session; the scheduler stores the plan and moves the task to planned. In same-session mode this tool also moves the task into the execution slot and keeps this session running: if the returned task status is inprogress, continue with the plan immediately; if it is planned, stop and wait for the scheduler.',
     parameters: {
       type: 'object',
@@ -3715,7 +3715,7 @@ function buildTools(s, ctx) {
     output: jsonOutput('{ board task }'),
     async execute(args, exec) {
       const sessionId = exec?.agent?.id != null ? String(exec.agent.id) : null;
-      if (!sessionId) throw new Error('board_plan_submit 只能在规划会话里调用');
+      if (!sessionId) throw new Error('dsh_team_board_plan_submit 只能在规划会话里调用');
       const task = await request(s, '/api/board/agents/plan', {
         method: 'POST',
         body: { sessionId, plan: args.plan, summary: args.summary || null },
@@ -3727,7 +3727,7 @@ function buildTools(s, ctx) {
         const agent = rec?.handle?.agent || exec?.agent;
         if (task.leadPermissionPreset) boardSetPermission(ctx, agent, task.leadPermissionPreset);
         // prewalk：这里只武装、不切模型。规划模型先按计划落下第一笔实现动作
-        // （首次 edit/write 或首次 team_task 派发），确认计划可执行后再交给执行模型。
+        // （首次 edit/write 或首次 dsh_team_task 派发），确认计划可执行后再交给执行模型。
         if (task.prewalk) {
           const boardSettings = await request(
             s,
@@ -3763,7 +3763,7 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'board_task_status',
+    name: 'dsh_team_board_task_status',
     description: 'Report the current workspace-board task status from the Lead session. Call it at the end of EVERY turn: "done" after all team tasks succeed, "failed" when the task cannot be completed, and "inprogress" while work remains or when waiting for the user (also call it when the user sends a new message after a finished task).',
     parameters: {
       type: 'object',
@@ -3777,7 +3777,7 @@ function buildTools(s, ctx) {
     output: jsonOutput('{ board task }'),
     async execute(args, exec) {
       const sessionId = exec?.agent?.id != null ? String(exec.agent.id) : null;
-      if (!sessionId) throw new Error('board_task_status 只能在看板 Lead 会话里调用');
+      if (!sessionId) throw new Error('dsh_team_board_task_status 只能在看板 Lead 会话里调用');
       return await request(s, '/api/board/agents/status', {
         method: 'POST',
         body: { sessionId, status: args.status, summary: args.summary || null },
@@ -3786,8 +3786,8 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'board_task_create',
-    description: 'Create a new workspace-board task card (the user-facing queue the board scheduler picks up) — use it when the user asks for a new task that is a separate deliverable or deserves its own session/branch (not a step of the current task, which is team_task). This is NOT a team DAG task: team_* tools stay inside the current team. workspaceId defaults to the caller own board task, then to the only registered workspace; pass it when either is ambiguous. Pass gitBranch to run the new task on a git branch ("" = auto `task/<id>`, omitted = no branch).',
+    name: 'dsh_team_board_task_create',
+    description: 'Create a new workspace-board task card (the user-facing queue the board scheduler picks up) — use it when the user asks for a new task that is a separate deliverable or deserves its own session/branch (not a step of the current task, which is dsh_team_task). This is NOT a team DAG task: team_* tools stay inside the current team. workspaceId defaults to the caller own board task, then to the only registered workspace; pass it when either is ambiguous. Pass gitBranch to run the new task on a git branch ("" = auto `task/<id>`, omitted = no branch).',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -3830,7 +3830,7 @@ function buildTools(s, ctx) {
           workspacePath = workspacePath || items[0].path;
         }
       }
-      if (!workspaceId) throw new Error('board_task_create 需要 workspaceId：当前会话不属于任何看板任务，且工作区不唯一');
+      if (!workspaceId) throw new Error('dsh_team_board_task_create 需要 workspaceId：当前会话不属于任何看板任务，且工作区不唯一');
       // 手填的 workspaceId 可能根本不存在（模型常填 00000000-… 占位 UUID）。这种卡会挂到
       // 一个 UI 上不存在的“幽灵工作区”，看板按 workspace_id 过滤后完全看不到，所以这里必须
       // 先解析：按 workspacePath 改挂到已注册工作区；DSH 注册表里确实存在（sidecar 还没同步）
@@ -3844,7 +3844,7 @@ function buildTools(s, ctx) {
           const registry = (() => { try { return ctx.get('workspaceRegistry'); } catch { return undefined; } })();
           const known = registry && typeof registry.get === 'function' ? registry.get(workspaceId) : null;
           if (!known) {
-            throw new Error(`board_task_create 的 workspaceId 不存在：${workspaceId}。可用工作区：${items.map((w) => `${w.id}（${w.title || w.path}）`).join('、') || '(sidecar 还没同步到工作区)'}`);
+            throw new Error(`dsh_team_board_task_create 的 workspaceId 不存在：${workspaceId}。可用工作区：${items.map((w) => `${w.id}（${w.title || w.path}）`).join('、') || '(sidecar 还没同步到工作区)'}`);
           }
         }
       }
@@ -3867,8 +3867,8 @@ function buildTools(s, ctx) {
   });
 
   tools.push({
-    name: 'board_task_get',
-    description: 'Read the current workspace-board task of this session (status/planSummary/lastError/gitBranch/sessions) when taskId is omitted, or any board card by taskId. Cheap and safe to call every turn: it returns the status snapshot, not the whole plan body. Use it to decide whether to keep working, wait, or report via board_task_status.',
+    name: 'dsh_team_board_task_get',
+    description: 'Read the current workspace-board task of this session (status/planSummary/lastError/gitBranch/sessions) when taskId is omitted, or any board card by taskId. Cheap and safe to call every turn: it returns the status snapshot, not the whole plan body. Use it to decide whether to keep working, wait, or report via dsh_team_board_task_status.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -3892,7 +3892,7 @@ function buildTools(s, ctx) {
         return { task: pick(task) };
       }
       const sessionId = exec?.agent?.id != null ? String(exec.agent.id) : null;
-      if (!sessionId) throw new Error('board_task_get 需要 taskId，或从看板会话里调用');
+      if (!sessionId) throw new Error('dsh_team_board_task_get 需要 taskId，或从看板会话里调用');
       const found = await request(s, `/api/board/by-session/${encodeURIComponent(sessionId)}`).catch(() => null);
       if (!found || found.ok === false || !found.id) throw new Error('当前会话没有关联的看板任务');
       return { task: pick(found) };
@@ -3903,7 +3903,7 @@ function buildTools(s, ctx) {
 }
 
 // ---------- trace 上报：把每次工具调用写成 span（running → done/failed） ----------
-/** 会话 → 团队 的粘性绑定：参数里出现 teamId 或 team_create 返回后记住，后续调用自动归属。 */
+/** 会话 → 团队 的粘性绑定：参数里出现 teamId 或 dsh_team_create 返回后记住，后续调用自动归属。 */
 const teamBySession = new Map();
 
 const clipText = (value, max) => {
@@ -4268,7 +4268,7 @@ export function apply(ctx, config) {
     });
   }
 
-  // 成员权限审批：preset 的 approval=ask 触发时，把请求转给 Lead，由 team_approve 决定。
+  // 成员权限审批：preset 的 approval=ask 触发时，把请求转给 Lead，由 dsh_team_approve 决定。
   // 放在最前面（prepend），确保本插件的成员请求不会再弹出宿主审批 UI。
   ctx.effect(() => {
     const off = ctx.on('approval/request', (req, next) => onApprovalRequest(s, ctx, req, next), { prepend: true });
@@ -4300,13 +4300,13 @@ export function apply(ctx, config) {
       if (!entry) return result;
       const name = String(exec?.name || '');
       // 任务收工（done/failed）时清掉未触发的武装，避免会话结束后残留。
-      if (name === 'board_task_status' && exec?.arguments?.status !== 'inprogress') {
+      if (name === 'dsh_team_board_task_status' && exec?.arguments?.status !== 'inprogress') {
         prewalkArmed.delete(sessionId);
         return result;
       }
       if (!boardPrewalkWantsTool(name)) return result;
       // 工具报错（参数错、权限拒绝等）不算「已经落到实现」：保持武装，等下一次
-      // 成功的 edit/write（或 team_task）再交接，避免接手模型先替规划模型收拾失败。
+      // 成功的 edit/write（或 dsh_team_task）再交接，避免接手模型先替规划模型收拾失败。
       if (result && (result.isError === true || result.error != null)) return result;
       prewalkArmed.delete(sessionId);
       await boardHandoffExecution(ctx, exec.agent, entry.task, entry.settings);
@@ -4318,7 +4318,7 @@ export function apply(ctx, config) {
   prewalkHook.dshTeamHook = 'prewalk';
   ctx.on('tools/execute', prewalkHook);
 
-  // 成员用内置 todo_write 维护计划（没建 team_todo）时，把 DSH 的 `todos` 投影镜像成
+  // 成员用内置 todo_write 维护计划（没建 dsh_team_todo）时，把 DSH 的 `todos` 投影镜像成
   // sidecar 计划步骤：面板/团队校验能看到真实 plan，todo 勾完计划步骤也跟着完成。
   ctx.on('tools/execute', async (exec, next) => {
     const result = await next();
@@ -4378,7 +4378,7 @@ export function apply(ctx, config) {
       idleTimers.delete(sessionId);
       if (heldSessions.has(sessionId)) { agentStatusBySession.set(sessionId, 'interrupted'); return; }
       if (agentStatusBySession.get(sessionId) !== 'idle') return; // 窗口内又跑起来了
-      // 把这一轮最后的正文带给 sidecar：漏调 team_report_task 时，兜底收尾的 task.done 也有摘要可看
+      // 把这一轮最后的正文带给 sidecar：漏调 dsh_team_report_task 时，兜底收尾的 task.done 也有摘要可看
       const reply = lastReplyBySession.get(sessionId);
       reportAgentStatus(s, sessionId, 'idle', reply ? clip(reply, 500) : undefined);
       void flushMemberReply(s, sessionId).catch(() => { /* ignore */ });
@@ -4484,7 +4484,7 @@ export function apply(ctx, config) {
     }, 'dsh-team.workspace-pump()');
   }
 
-  // 模型目录泵：面板「模型路由」页不再依赖 lead 调 team_models。
+  // 模型目录泵：面板「模型路由」页不再依赖 lead 调 dsh_team_models。
   // 启动即同步（sidecar 可能刚 spawn，失败 2s 重试），成功后按 llmCatalogMs 定时刷新。
   if (s.reportLlmCatalog) {
     ctx.effect(() => {

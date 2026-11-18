@@ -1,6 +1,6 @@
 # 数据模型
 
-> **v2 变更（2026-11）**：worker 运行时与四域 broker 已移除；成员一律是真 sub-agent，权限由 DSH 权限预设按成员分配，成员审批经 `team_approve` 转发给 Lead。下文涉及 `worker` / `broker` / `policy` / `scope` 的段落为历史记录，以 [CONTRACT.md](../docs/CONTRACT.md) 与 [README](../README.md) 为准。
+> **v2 变更（2026-11）**：worker 运行时与四域 broker 已移除；成员一律是真 sub-agent，权限由 DSH 权限预设按成员分配，成员审批经 `dsh_team_approve` 转发给 Lead。下文涉及 `worker` / `broker` / `policy` / `scope` 的段落为历史记录，以 [CONTRACT.md](../docs/CONTRACT.md) 与 [README](../README.md) 为准。
 
 ## 表（`src/db.mjs`，`SCHEMA_VERSION = 21`，共 25 张）
 
@@ -57,7 +57,7 @@ rebuild()  ── 只读 event 重投影出 member_state
 ## 看板状态机要点（`src/board.mjs`，ADR-012）
 
 ```text
-board_task: todo → planning →（board_plan_submit）planned →（claim/start）inprogress →（board_task_status）done | failed
+board_task: todo → planning →（dsh_team_board_plan_submit）planned →（claim/start）inprogress →（dsh_team_board_task_status）done | failed
            todo/inprogress --claim 同步模式--> planning/inprogress（same 模式：规划会话即执行会话）
 ```
 

@@ -67,7 +67,7 @@ SSE（store.tsx:624-717）
   ├ 帧 data 即 payload 本身（无 envelope）；history 回填才有 {payload} 包裹（:658）
   ├ member.status → patchMember + 去抖 refreshTeams(400ms) + 去抖 refreshStatus(150ms)
   │                （init 相位的 agent.spawn / member.update 帧不带 model/role/思考强度，
-  │                  只有回拉 /api/status 才能让 team_member update 的配置立刻上屏；undefined 字段不覆盖）
+  │                  只有回拉 /api/status 才能让 dsh_team_member update 的配置立刻上屏；undefined 字段不覆盖）
   ├ step.append  → 时间线 ingest + 去抖 trace(200ms)；action==='task.todo' 时刷 todos
   ├ task.state   → dag/tasks/artifacts 去抖
   └ span.append  → trace 去抖(120ms)

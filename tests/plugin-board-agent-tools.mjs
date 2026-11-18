@@ -1,4 +1,4 @@
-// tests/plugin-board-agent-tools.mjs — agent 侧工具：board_task_create / board_task_get / team_task_get
+// tests/plugin-board-agent-tools.mjs — agent 侧工具：dsh_team_board_task_create / dsh_team_board_task_get / dsh_team_task_get
 import assert from 'node:assert/strict';
 import { mkTmp, startSidecar } from './lib/harness.mjs';
 import { apply } from '../dsh-plugin/index.js';
@@ -79,9 +79,9 @@ const main = async () => {
       agentAutoDispatch: false, boardDispatchMs: 200, boardIdleGraceMs: 800,
     });
 
-    const createTool = ctx.tools.get('board_task_create');
-    const getTool = ctx.tools.get('board_task_get');
-    const teamGetTool = ctx.tools.get('team_task_get');
+    const createTool = ctx.tools.get('dsh_team_board_task_create');
+    const getTool = ctx.tools.get('dsh_team_board_task_get');
+    const teamGetTool = ctx.tools.get('dsh_team_task_get');
     assert.ok(createTool && getTool && teamGetTool, '三个 agent 侧工具已注册');
 
     // 1) 成员建看板任务：只返回精简 task，带上 git 分支与工作区

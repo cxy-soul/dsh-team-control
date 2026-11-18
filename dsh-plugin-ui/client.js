@@ -1061,7 +1061,7 @@ window.__ModuleLoader__.load({
         let total = assigned.length;
         let done = doneTasks;
         let planDriven = false;
-        // 成员自己报的步骤清单（team_todo，或内置 todo_write 被镜像成计划）才是真实进度，优先用它。
+        // 成员自己报的步骤清单（dsh_team_todo，或内置 todo_write 被镜像成计划）才是真实进度，优先用它。
         const plan = (planByMember.get(member.id) || [])
           .slice()
           .sort((a, b) => (a.orderNo || 0) - (b.orderNo || 0))
@@ -1392,7 +1392,7 @@ window.__ModuleLoader__.load({
                   + (agent.effort ? ' · effort ' + agent.effort : ''),
               }, progressLabel))),
 
-            // 计划清单：全部展开，不再按选中折叠（成员自报的 todo / team_todo 步骤）
+            // 计划清单：全部展开，不再按选中折叠（成员自报的 todo / dsh_team_todo 步骤）
             planTotal > 0
               ? h('div', { className: 'ui-afc__plan-wrap' },
                 h('div', { className: 'ui-afc__plan-head' },

@@ -1,6 +1,6 @@
 # 架构总览
 
-> **v2 变更（2026-11）**：worker 运行时与四域 broker 已移除；成员一律是真 sub-agent，权限由 DSH 权限预设按成员分配，成员审批经 `team_approve` 转发给 Lead。下文涉及 `worker` / `broker` / `policy` / `scope` 的段落为历史记录，以 [CONTRACT.md](../docs/CONTRACT.md) 与 [README](../README.md) 为准。
+> **v2 变更（2026-11）**：worker 运行时与四域 broker 已移除；成员一律是真 sub-agent，权限由 DSH 权限预设按成员分配，成员审批经 `dsh_team_approve` 转发给 Lead。下文涉及 `worker` / `broker` / `policy` / `scope` 的段落为历史记录，以 [CONTRACT.md](../docs/CONTRACT.md) 与 [README](../README.md) 为准。
 
 ## 形态：一个 sidecar + 两个 Host/Client 插件 + 一个面板
 
@@ -19,7 +19,7 @@ DSH agent × N ◀──subagents.startActivation / sendMessage── dsh-plugin
 四层职责划得很硬：
 
 1. **sidecar（`src/` + `bin/`）** 是编排内核，也是**唯一真相源**：进程、SQLite（WAL）、四域权限、事件流、调度、SSE、HTTP。它不认识 LLM，不持有凭据。
-2. **Host 插件（`dsh-plugin/`）** 只做「适配 + 生命周期」：把 sidecar 暴露成 20 个 `team_*` + 4 个 `board_*` 工具；把成员拉成真 DSH 子会话；把工具调用/文件改动/token 用量/上下文占用上报成 span/change/context。
+2. **Host 插件（`dsh-plugin/`）** 只做「适配 + 生命周期」：把 sidecar 暴露成 20 个 `dsh_team_*` + 4 个 `dsh_team_board_*` 工具；把成员拉成真 DSH 子会话；把工具调用/文件改动/token 用量/上下文占用上报成 span/change/context。
 3. **Client 插件（`dsh-plugin-ui/`）** 只把 sidecar 自带面板挂进 DSH GUI（better-sidebar 页签或侧栏回退），用 Host 同源代理转发 `/dsh-team-api/*`，浏览器拿不到 sidecar token。
 4. **面板前端（`src/web-ui/`）** 是 sidecar 托管的那份 UI 的源码，`npm run build` 输出到 `src/web/`。
 
@@ -57,7 +57,7 @@ Worker 进程以 `node --permission --allow-fs-read=<bundleDir>` 启动（无写
 | agent 运行时（ADR-009） | 成员降级为 sidecar 的状态客户端 | 复用 DSH 自己的子会话能力 |
 | 面板首页（ADR-010） | 单一 AppShell 侧栏替代横向 Tabs | affectui 化 |
 | 会话头部团队卡（ADR-011） | AgentFindings 移植成 header 胶囊 + overlay | 不占侧栏 |
-| 工作区看板（ADR-012） | `src/board.mjs` 状态机 + `/api/board/**` + `board_*` 工具 | 面板/看板与团队编排复用同一 sidecar |
+| 工作区看板（ADR-012） | `src/board.mjs` 状态机 + `/api/board/**` + `dsh_team_board_*` 工具 | 面板/看板与团队编排复用同一 sidecar |
 
 ## 已知限制（写进 README 与 ADR）
 

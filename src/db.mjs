@@ -87,7 +87,7 @@ CREATE INDEX IF NOT EXISTS idx_event_team ON event(team_id, id);
 CREATE INDEX IF NOT EXISTS idx_event_member ON event(member_id, seq);
 
 -- 权限审批：成员会话在 permission preset 的 approval=ask 下触发的审批。
--- sidecar 只做待办/审计镜像，真正的允许/拒绝由 Host 插件里的 team_approve 决定并回填。
+-- sidecar 只做待办/审计镜像，真正的允许/拒绝由 Host 插件里的 dsh_team_approve 决定并回填。
 CREATE TABLE IF NOT EXISTS approval (
   id TEXT PRIMARY KEY, team_id TEXT NOT NULL,
   member_id TEXT, session_id TEXT,

@@ -3,17 +3,17 @@
 **工具全报 `connect ECONNREFUSED`**
 `autoStart:true` 时插件应自己拉起 sidecar，失败看 `startTimeoutMs` 是否打满（说明 spawn 成功但没读到 ready 行）。手工验证：`node bin/dsh-team.mjs up --foreground`，看第一行是不是单行 JSON。
 
-**`team_spawn` 报 `unknown teamId`**
-`team_create` 返回的是 `result.team.id`，不是入参 `name`。后续所有调用都要用这个 id（`plugin-teamid-guard` 测试专门守这个）。
+**`dsh_team_spawn` 报 `unknown teamId`**
+`dsh_team_create` 返回的是 `result.team.id`，不是入参 `name`。后续所有调用都要用这个 id（`plugin-teamid-guard` 测试专门守这个）。
 
 **`assignee` 传了成员名字但不生效**
-`team_task` 的 `assignee` 要的是 **member id**（`team_spawn` 返回的 `id`），不是名字。
+`dsh_team_task` 的 `assignee` 要的是 **member id**（`dsh_team_spawn` 返回的 `id`），不是名字。
 
 **agent 成员永远不报任务**
-简报里没写「最后调用 `team_report_task`」。成员看不到 Lead 的对话，必须在 prompt 里明确：teamId、taskId（或让 `team_task` 派发时带上）、以及验收标准。
+简报里没写「最后调用 `dsh_team_report_task`」。成员看不到 Lead 的对话，必须在 prompt 里明确：teamId、taskId（或让 `dsh_team_task` 派发时带上）、以及验收标准。
 
 **成员 idle 了但任务没派出去**
-等 `agentDispatchMs` 一个周期，或直接调 `team_dispatch`。仍不行就看 sidecar 的 `GET /api/blockers`（上限打满 / 全员 blocked）。
+等 `agentDispatchMs` 一个周期，或直接调 `dsh_team_dispatch`。仍不行就看 sidecar 的 `GET /api/blockers`（上限打满 / 全员 blocked）。
 
 **任务被重复派给同一成员**
 `agent/status → idle` 的 settle 窗口被配得太小（`agentIdleSettleMs`）。宿主两次 turn 之间会有短暂无活动。

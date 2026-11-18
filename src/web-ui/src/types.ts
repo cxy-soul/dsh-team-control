@@ -69,7 +69,7 @@ export interface TeamMessage {
   kind?: string;
   status?: string;
   correlationId?: string;
-  /** 消息正文等业务负载（team_send 写入 { text }） */
+  /** 消息正文等业务负载（dsh_team_send 写入 { text }） */
   payload?: Record<string, unknown>;
   sentAt?: string;
   deliveredAt?: string;
@@ -197,7 +197,7 @@ export interface TraceData {
   stats: TraceStats;
 }
 
-/** 任务计划清单（/api/todos）。Leader/成员通过 team_todo 维护，主页 Plan 区域实时渲染。 */
+/** 任务计划清单（/api/todos）。Leader/成员通过 dsh_team_todo 维护，主页 Plan 区域实时渲染。 */
 export interface Todo {
   id: string;
   teamId: string;

@@ -27,7 +27,7 @@ DSH 0.2.2 起把「给另一个 agent 发消息」收敛成**宿主工具** `sen
   只查全局会漏；`ResolvedToolSet.view(scope)` 在 `scope !== agent` 时返回空表，所以检测与执行都必须
   把 `sender` 作为作用域/`agent` 传下去。
 - 五处投递全部改走该入口：派发简报（`deliverTask`）、审批通知（`notifyLeadOfApproval`）、
-  成员中断通知（`notifyLeadOfMemberInterrupt`）、面板 steer 泵（`steerPump`）、`team_send`。
+  成员中断通知（`notifyLeadOfMemberInterrupt`）、面板 steer 泵（`steerPump`）、`dsh_team_send`。
 - `send_message` 的 `agent` 参数直接传**会话 id**：`resolveName` 对不含 `/` 的未命中名字会原样当会话 id 返回，
   所以调用方不需要额外做名字解析，行为与旧路径等价。
 - 打断仍走 `subagents.interrupt`（ADR-016 的语义不变）：原生工具对应的是 `interrupt_agent`，
@@ -36,7 +36,7 @@ DSH 0.2.2 起把「给另一个 agent 发消息」收敛成**宿主工具** `sen
 ## 权衡
 
 - 走工具层比直调服务多一层 schema 校验与结果包装，性能差别可忽略；换来的是宿主后续改动自动继承。
-- 工具失败（`isError`）会作为异常抛出，`team_send` 记进 `failed[]`、泵保持 queued 重试——**不会**因为
+- 工具失败（`isError`）会作为异常抛出，`dsh_team_send` 记进 `failed[]`、泵保持 queued 重试——**不会**因为
   原生路径失败而静默降级去重发一次（可能造成重复投递）。
 - 低版本行为完全不变，`inject = ['tools']` 保证 `ctx.tools` 存在；测试用的假 ctx 只有 `register`/`get`、
   没有 `execute`，因此天然走回退分支，既有 33 个脚本无需改动。

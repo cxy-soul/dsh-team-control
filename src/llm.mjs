@@ -2,7 +2,7 @@
 //
 // 数据从 Host 插件同步进来（Host 的 ctx.llm.listProviders()/listModels()），sidecar 不猜
 // provider/model 是否存在；它只负责把用户勾选的子集和备注持久化，供面板展示与
-// team_models/team_spawn 使用。
+// dsh_team_models/dsh_team_spawn 使用。
 import { ERR, nowIso } from './util.mjs';
 
 const clip = (v, max) => {
@@ -162,7 +162,7 @@ export class LlmCatalog {
     return { asOf: nowIso(), source: 'dsh-llm', providers, totals: this.totals() };
   }
 
-  /** team_models 用：只返回用户勾选启用的 route。 */
+  /** dsh_team_models 用：只返回用户勾选启用的 route。 */
   enabledModels() {
     return this.get('SELECT * FROM llm_route WHERE enabled=1 ORDER BY provider ASC, name ASC, model ASC').all()
       .map((r) => this.rowToModel(r));

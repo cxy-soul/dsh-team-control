@@ -694,7 +694,7 @@ export function PanelProvider({ children }: { children: ReactNode }) {
           // 成员状态变化 → 团队运行状态 badge 去抖刷新
           refreshTeamsSoon();
           // init 相位的帧（agent.spawn / member.update）只带状态，不带 model / role / 思考强度：
-          // 再拉一次 /api/status 才能让 team_member update 后的配置立刻上屏。
+          // 再拉一次 /api/status 才能让 dsh_team_member update 后的配置立刻上屏。
           scheduleRefresh('status', 150);
           break;
         }
@@ -1093,7 +1093,7 @@ export function PanelProvider({ children }: { children: ReactNode }) {
     const offline = () => patchUi({ conn: 'offline' });
     window.addEventListener('online', online);
     window.addEventListener('offline', offline);
-    // 团队列表没有 SSE 事件（team_create/封存由插件或 API 触发）：低频轮询 + 回到前台时立即刷新。
+    // 团队列表没有 SSE 事件（dsh_team_create/封存由插件或 API 触发）：低频轮询 + 回到前台时立即刷新。
     // 工作区注册表同理（Host 每 20s 同步一次），这里每 6 次轮询（约 30s）顺带刷一次。
     let ticks = 0;
     const pollTeams = () => {

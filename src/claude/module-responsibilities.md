@@ -36,7 +36,7 @@
 广播基础 7 帧 + 合成 4 帧；`lastEventId` 续传时从 `event` 表回放缺口。
 
 ### `llm.mjs`（209 行）— 模型目录
-只持久化 provider/route 与启停开关，**不发任何 LLM 请求**；供 `team_models` 与面板 Models 视图读取。
+只持久化 provider/route 与启停开关，**不发任何 LLM 请求**；供 `dsh_team_models` 与面板 Models 视图读取。
 
 ### `server.mjs`（285 行）— HTTP
 `createRoutes(core)` + `startServer({home, port=4317, host='127.0.0.1', leaseMs=15000, log})` → `{server, core, token, port, url, home, close}`；静态托管 `PANEL_DIR = ./web/`（no-cache、越界 403）。

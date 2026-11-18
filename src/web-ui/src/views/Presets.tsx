@@ -63,7 +63,7 @@ export function PresetsView() {
         }
       />
       {shown.length === 0 ? (
-        <EmptyState title="还没有预设目录" detail="Host 插件启动后会同步；也可以让 Lead 用 team_preset 新建一个。" />
+        <EmptyState title="还没有预设目录" detail="Host 插件启动后会同步；也可以让 Lead 用 dsh_team_preset 新建一个。" />
       ) : (
         <div className="min-h-0 flex-1 overflow-auto rounded-lg border">
           <table className="w-full text-left text-xs">
@@ -126,7 +126,7 @@ export function PresetsView() {
         </div>
       )}
       <p className="text-xs text-muted-foreground">
-        新建/修改用 Lead 的 <code className="font-mono">team_preset</code>；内置预设来自 DSH bundle，不能覆盖。
+        新建/修改用 Lead 的 <code className="font-mono">dsh_team_preset</code>；内置预设来自 DSH bundle，不能覆盖。
       </p>
     </section>
   );

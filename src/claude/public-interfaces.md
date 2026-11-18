@@ -44,7 +44,7 @@ decide(requestId, {decision, decidedBy, reason, ttlSeconds, singleUse})
 ## 审计字段（`audit` 表）
 
 `actor`（team/member）、`domain`、`action`、`target`、`before_sha`、`after_sha`、时间戳。
-`team_report` 工具导出的 Markdown 报告里的 audit 表就是这张表的投影（含完整前后哈希），可用来自证「谁改了哪个文件」。
+`dsh_team_report` 工具导出的 Markdown 报告里的 audit 表就是这张表的投影（含完整前后哈希），可用来自证「谁改了哪个文件」。
 
 ## 脱敏
 

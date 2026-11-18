@@ -17,7 +17,7 @@ assert.equal(team.invocation.userInvocable, true, 'SKILL.md 里 user-invocable: 
 assert.equal(team.provider, 'dsh-team');
 assert.equal(team.resourceBase.kind, 'directory');
 assert.ok(fs.existsSync(path.join(team.resourceBase.path, 'SKILL.md')));
-assert.ok(team.description.includes('team_create'), 'description 用作路由摘要');
+assert.ok(team.description.includes('dsh_team_create'), 'description 用作路由摘要');
 
 // 2) frontmatter 解析：引号、布尔、冒号后长文本
 assert.deepEqual(parseSkillFrontmatter('---\nname: a-b\nuser-invocable: false\nx: "q: v"\n---\nbody'), {
@@ -55,7 +55,7 @@ assert.ok(listed.some((c) => c.name === 'dsh-agent-team'));
 const definition = await loaded.get(fake, { cwd: repoRoot });
 assert.ok(definition);
 assert.ok(!definition.content.startsWith('---'), '正文不含 frontmatter');
-assert.ok(definition.content.includes('team_create'), '正文是技能内容');
+assert.ok(definition.content.includes('dsh_team_create'), '正文是技能内容');
 
 console.log('skill-provider ok');
 process.exit(0);

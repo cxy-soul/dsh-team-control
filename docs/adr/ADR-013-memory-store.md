@@ -58,7 +58,7 @@
 
 ## 后果
 
-- 新增 5 个工具：`team_memory_write/read/list/share/delete`，`team_*` 工具从 14 个变 19 个。
+- 新增 5 个工具：`dsh_team_memory_write/read/list/share/delete`，`team_*` 工具从 14 个变 19 个。
 - 新增 7 条 REST（`/api/memory...`）与 SSE 合成帧 `memory.updated`（只带 id/scope，不带正文）。
 - 面板新增「记忆」页签（`#/w/<ws>/t/<team>/memory`）：scope 切换、类型过滤、搜索、详情、改可见性、删除。
 - 记忆总量与单条大小有上限（5000 条 / 64KB），超限显式报错，不做静默截断。

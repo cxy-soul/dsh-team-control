@@ -48,16 +48,16 @@ const main = async () => {
     await sleep(150);
     assert.equal((await api.get(`/api/spans?team=${team.id}`)).items.length, 0, '无团队归属的工具调用不上报');
 
-    // ② team_status 带 teamId：running → done，且绑定会话
+    // ② dsh_team_status 带 teamId：running → done，且绑定会话
     const exec = (callId, name, args) => ({ name, callId, arguments: args, agent: { id: 'sess-probe' } });
-    const out = await drive(exec('c1', 'team_status', { teamId: team.id }), async () => ({ value: { members: [] } }));
+    const out = await drive(exec('c1', 'dsh_team_status', { teamId: team.id }), async () => ({ value: { members: [] } }));
     assert.deepEqual(out, { value: { members: [] } }, 'waterfall 透传 next() 结果');
 
     const spans = await waitFor('span 落库', async () => {
       const r = await api.get(`/api/spans?team=${team.id}`);
       return r.items.length === 1 ? r : null;
     }, { timeout: 4000, interval: 30 });
-    assert.equal(spans.items[0].name, 'team_status', 'span.name 是工具名');
+    assert.equal(spans.items[0].name, 'dsh_team_status', 'span.name 是工具名');
     assert.equal(spans.items[0].status, 'done', '结束后 status=done');
     assert.equal(spans.items[0].sessionId, 'sess-probe', 'span 记录会话 id');
     assert.ok(spans.items[0].endMs >= spans.items[0].startMs, 'end >= start');
@@ -69,7 +69,7 @@ const main = async () => {
       { timeout: 4000, interval: 30 });
 
     // ④ 失败路径
-    await drive(exec('c3', 'team_spawn', { teamId: team.id, name: 'x' }), async () => { throw new Error('boom'); })
+    await drive(exec('c3', 'dsh_team_spawn', { teamId: team.id, name: 'x' }), async () => { throw new Error('boom'); })
       .then(() => { throw new Error('应抛出'); }, (e) => assert.equal(e.message, 'boom', '错误原样抛出'));
     const failed = await waitFor('failed span 落库', async () => {
       const r = await api.get(`/api/spans?team=${team.id}`);

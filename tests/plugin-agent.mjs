@@ -1,10 +1,10 @@
 // tests/plugin-agent.mjs — Host 插件的 agent 成员闭环（不依赖运行中的 DSH：假 ctx + 真 sidecar）。
-// 覆盖：① team_create 透传 permissionPreset ② team_spawn 调 subagents.startActivation、设置权限预设并把 sessionId 注册回 sidecar
-//       ③ team_task 自动 dispatch → sendMessage 收到任务简报（含 taskId 与 team_report_task 指引）
-//       ④ 成员 team_report_task(done) → 任务 done、成员回 idle
+// 覆盖：① dsh_team_create 透传 permissionPreset ② dsh_team_spawn 调 subagents.startActivation、设置权限预设并把 sessionId 注册回 sidecar
+//       ③ dsh_team_task 自动 dispatch → sendMessage 收到任务简报（含 taskId 与 dsh_team_report_task 指引）
+//       ④ 成员 dsh_team_report_task(done) → 任务 done、成员回 idle
 //       ⑤ 归属校验：别的 session 回报被拒
 //       ⑥ agent/status=idle 兜底收尾在途任务，并继续派发下一波
-//       ⑦ team_control interrupt 调 subagents.interrupt
+//       ⑦ dsh_team_control interrupt 调 subagents.interrupt
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -106,13 +106,13 @@ const main = async () => {
     let asAlice = null;
 
     // ① 建 agent 团队
-    const created = await tool('team_create').execute({ name: 'plugin-agent', workspace: tmp.ws, agentPreset: 'standard' }, lead);
+    const created = await tool('dsh_team_create').execute({ name: 'plugin-agent', workspace: tmp.ws, agentPreset: 'standard' }, lead);
     const team = created.team;
-    assert.equal(team.permissionPreset, 'workspace-write', 'team_create 默认 workspace-write');
-    assert.equal(team.agentPreset, 'standard', 'team_create 透传 agentPreset');
+    assert.equal(team.permissionPreset, 'workspace-write', 'dsh_team_create 默认 workspace-write');
+    assert.equal(team.agentPreset, 'standard', 'dsh_team_create 透传 agentPreset');
 
     // ② spawn：真调 subagents.startActivation（continuable 子会话）+ 注册回 sidecar
-    const spawned = await tool('team_spawn').execute(
+    const spawned = await tool('dsh_team_spawn').execute(
       { teamId: team.id, name: 'alice', role: 'encoder', prompt: '你是 alice，负责实现 FS02。' }, lead,
     );
     const sessionId = spawned.member.agentSessionId;
@@ -139,64 +139,64 @@ const main = async () => {
 
     // ②b agentPreset 校验：未知 id 报错；fork 继承父组装，传了只警告不生效
     await assert.rejects(
-      () => tool('team_spawn').execute({ teamId: team.id, name: 'ghost', prompt: 'x', agentPreset: 'nope' }, lead),
+      () => tool('dsh_team_spawn').execute({ teamId: team.id, name: 'ghost', prompt: 'x', agentPreset: 'nope' }, lead),
       /agentPreset「nope」不存在/,
       '未知 agentPreset 被拒绝',
     );
     // ②b2 宿主挂载失败的预设：提前报「启动失败」并列出可用预设，而不是让成员白起一轮
     ctx.get('agentPresets').defs.set('legacy-broken', { id: 'legacy-broken', broken: 'tool-office (@deepseek-ai/dsh-tool-office): never started' });
     await assert.rejects(
-      () => tool('team_spawn').execute({ teamId: team.id, name: 'old-preset', prompt: 'x', agentPreset: 'legacy-broken' }, lead),
+      () => tool('dsh_team_spawn').execute({ teamId: team.id, name: 'old-preset', prompt: 'x', agentPreset: 'legacy-broken' }, lead),
       /legacy-broken.*在宿主里启动失败：tool-office[\s\S]*可用预设：standard/,
       '挂载失败的预设被提前拒绝，并给出可用预设',
     );
     ctx.get('agentPresets').defs.delete('legacy-broken');
-    const forked = await tool('team_spawn').execute(
+    const forked = await tool('dsh_team_spawn').execute(
       { teamId: team.id, name: 'bob-fork', prompt: '你是 bob。', contextMode: 'fork', agentPreset: 'reviewer' }, lead,
     );
     assert.equal(ctx.agents.spawned.at(-1).req.agentPreset, undefined, 'fork 不传 agentPreset');
     assert.match(String(forked.agentPresetWarning || ''), /fork/, 'fork 时给出警告');
 
     // ②c Leader 自建 agentPreset：写固定目录 + 立刻注册；内置同名不可覆盖
-    const listed0 = await tool('team_preset').execute({ action: 'list' }, lead);
+    const listed0 = await tool('dsh_team_preset').execute({ action: 'list' }, lead);
     assert.equal(listed0.dir, path.join(tmp.dataDir, 'presets'), '预设目录来自配置');
     assert(listed0.presets.some((p) => p.id === 'standard' && p.source === 'host'), '列出宿主预设');
     assert(listed0.presets.some((p) => p.id === 'boot-preset' && p.source === 'team'), '插件启动时加载目录里的预设');
-    const saved = await tool('team_preset').execute({
+    const saved = await tool('dsh_team_preset').execute({
       action: 'save', id: 'strict-reviewer', name: '严格审阅',
       plugins: [{ name: '@deepseek-ai/dsh-tool-fs' }, { name: '@deepseek-ai/dsh-persona', config: { prefix: 'You are a strict reviewer.' } }],
     }, lead);
     assert.equal(saved.registered, true, '自建预设立刻注册');
     assert.equal(saved.file, path.join(tmp.dataDir, 'presets', 'strict-reviewer.json'), '写入固定目录');
-    const listed1 = await tool('team_preset').execute({ action: 'list' }, lead);
+    const listed1 = await tool('dsh_team_preset').execute({ action: 'list' }, lead);
     assert(listed1.presets.some((p) => p.id === 'strict-reviewer' && p.source === 'team'), 'list 标出 team 来源');
-    const shown = await tool('team_preset').execute({ action: 'show', id: 'strict-reviewer' }, lead);
+    const shown = await tool('dsh_team_preset').execute({ action: 'show', id: 'strict-reviewer' }, lead);
     assert.equal(shown.doc.plugins.length, 2, 'show 读回文档');
     await assert.rejects(
-      () => tool('team_preset').execute({ action: 'save', id: 'strict-reviewer', plugins: [{ name: '@deepseek-ai/dsh-tool-fs' }] }, lead),
+      () => tool('dsh_team_preset').execute({ action: 'save', id: 'strict-reviewer', plugins: [{ name: '@deepseek-ai/dsh-tool-fs' }] }, lead),
       /覆盖请传 confirm:true/,
       '覆盖同名团队预设需显式 confirm',
     );
-    const overwritten = await tool('team_preset').execute({
+    const overwritten = await tool('dsh_team_preset').execute({
       action: 'save', id: 'strict-reviewer', description: 'v2', confirm: true,
       plugins: [{ name: '@deepseek-ai/dsh-tool-fs' }],
     }, lead);
     assert.equal(overwritten.registered, true, 'confirm 后可覆盖');
-    const custom = await tool('team_spawn').execute({ teamId: team.id, name: 'carol', prompt: '你是 carol。', agentPreset: 'strict-reviewer' }, lead);
+    const custom = await tool('dsh_team_spawn').execute({ teamId: team.id, name: 'carol', prompt: '你是 carol。', agentPreset: 'strict-reviewer' }, lead);
     assert.equal(custom.agentPreset, 'strict-reviewer', '自建预设可派发');
     await assert.rejects(
-      () => tool('team_preset').execute({ action: 'save', id: 'standard', plugins: [{ name: '@deepseek-ai/dsh-tool-fs' }] }, lead),
+      () => tool('dsh_team_preset').execute({ action: 'save', id: 'standard', plugins: [{ name: '@deepseek-ai/dsh-tool-fs' }] }, lead),
       /已由宿主定义/,
       '内置同名预设不可覆盖',
     );
-    const temp = await tool('team_preset').execute({ action: 'save', id: 'temp-preset', plugins: [{ name: '@deepseek-ai/dsh-tool-fs' }] }, lead);
-    const removed = await tool('team_preset').execute({ action: 'delete', id: 'temp-preset' }, lead);
+    const temp = await tool('dsh_team_preset').execute({ action: 'save', id: 'temp-preset', plugins: [{ name: '@deepseek-ai/dsh-tool-fs' }] }, lead);
+    const removed = await tool('dsh_team_preset').execute({ action: 'delete', id: 'temp-preset' }, lead);
     assert.equal(removed.removed, true, '自建预设可删除');
     assert.equal(fs.existsSync(temp.file), false, '删除会移除文件');
-    const afterDelete = await tool('team_preset').execute({ action: 'list' }, lead);
+    const afterDelete = await tool('dsh_team_preset').execute({ action: 'list' }, lead);
     assert(!afterDelete.presets.some((p) => p.id === 'temp-preset'), '删除后 list 不再出现');
     await assert.rejects(
-      () => tool('team_preset').execute({ action: 'delete', id: 'standard' }, lead),
+      () => tool('dsh_team_preset').execute({ action: 'delete', id: 'standard' }, lead),
       /只有团队自建预设可以删除/,
       '内置预设不可删除',
     );
@@ -206,7 +206,7 @@ const main = async () => {
     assert.equal(syncedDoc.doc.plugins.length, 1, '镜像带组合文档（覆盖后 1 个插件）');
 
     // ③ 建任务 → 自动 dispatch → sendMessage 简报
-    const t1 = await tool('team_task').execute({ teamId: team.id, subject: '实现 FS02 编码器' }, lead);
+    const t1 = await tool('dsh_team_task').execute({ teamId: team.id, subject: '实现 FS02 编码器' }, lead);
     const t1Status = (await api.get(`/api/tasks/${t1.task.id}`)).status;
     assert.equal(t1Status, 'running', '任务被原子认领');
     await waitFor('任务简报送达', async () => (ctx.agents.messages.length ? true : null), 3000);
@@ -214,7 +214,7 @@ const main = async () => {
     assert.equal(brief.target, sessionId, '消息按成员 session id 投递');
     const text = brief.content[0].text;
     assert(text.includes(`taskId=${t1.task.id}`), '简报带 taskId');
-    assert(text.includes('team_report_task'), '简报教成员怎么回报');
+    assert(text.includes('dsh_team_report_task'), '简报教成员怎么回报');
     assert(text.includes(team.id), '简报带 teamId');
     // ③b 简报同时落成一条 Lead→成员消息并回填「送达」：面板【消息与回执】靠它和收工回复配对
     const briefMsg = await waitFor('简报落信箱并标记送达', async () => {
@@ -224,10 +224,10 @@ const main = async () => {
     assert.match(String(briefMsg.payload?.text || ''), new RegExp(t1.task.id), '简报正文带 taskId');
     assert(Number.isFinite(Date.parse(briefMsg.deliveredAt)), '送达回执带 deliveredAt');
     // t2 先建好但不派发：t1 回报 done 触发的那一轮派发应把它投给刚空出来的成员
-    const t2 = await tool('team_task').execute({ teamId: team.id, subject: '写验收用例', dispatch: false }, lead);
+    const t2 = await tool('dsh_team_task').execute({ teamId: team.id, subject: '写验收用例', dispatch: false }, lead);
 
     // ④ 成员回报 done
-    const rep = await tool('team_report_task').execute(
+    const rep = await tool('dsh_team_report_task').execute(
       { teamId: team.id, taskId: t1.task.id, status: 'done', summary: 'FS02 已实现，见 src/fs02.mjs' }, asAlice,
     );
     assert.equal(rep.status, 'done', '回报后任务 done');
@@ -235,15 +235,15 @@ const main = async () => {
     assert.equal(afterDone.members[0].status, 'idle', '成员回 idle');
 
     // ⑤ 归属校验：别的 session 不能替 alice 回报
-    // t1 完成后成员回 idle，插件会自动接着派下一波（无需手动 team_dispatch）
+    // t1 完成后成员回 idle，插件会自动接着派下一波（无需手动 dsh_team_dispatch）
     const t2row = await waitFor('t2 被自动派发', async () => {
       const row = await api.get(`/api/tasks/${t2.task.id}`);
       return row.status === 'running' && row.assignee ? row : null;
     }, 8000);
     assert.equal(t2row.assignee, spawned.member.id, '仍是同一个 agent 成员接手');
-    // 成员 team_report_task 触发的第二轮派发，发信人必须仍是 Lead 句柄（成员调用不得覆盖它）
+    // 成员 dsh_team_report_task 触发的第二轮派发，发信人必须仍是 Lead 句柄（成员调用不得覆盖它）
     assert.equal(ctx.agents.messages.at(-1).caller, lead.agent, '第二轮派发由 Lead 句柄发出');
-    const mallory = await tool('team_report_task').execute(
+    const mallory = await tool('dsh_team_report_task').execute(
       { teamId: team.id, taskId: t2.task.id, status: 'done', summary: '偷写' }, { agent: { id: 'sess-mallory' } },
     );
     assert.equal(mallory.ok, false, '未知 session 的回报被拒');
@@ -297,7 +297,7 @@ const main = async () => {
     assert.match(String(reply.payload?.text || ''), /FS02 已经实现/, '回复正文来自成员最后一条助手消息');
 
     // ⑦ interrupt 走 subagents.interrupt（先把成员跑起来，idle 没得中断）
-    const t3 = await tool('team_task').execute({ teamId: team.id, subject: '补一版文档', dispatch: false }, lead);
+    const t3 = await tool('dsh_team_task').execute({ teamId: team.id, subject: '补一版文档', dispatch: false }, lead);
     const t3Mark = ctx.agents.ops.length;
     await waitFor('t3 自动派发', async () => (
       (await api.get(`/api/tasks/${t3.task.id}`)).status === 'running' ? true : null
@@ -307,9 +307,9 @@ const main = async () => {
     await waitFor('t3 派发简报已投递', () => (
       ctx.agents.ops.slice(t3Mark).some((op) => op.startsWith('send:')) ? true : null
     ), 8000);
-    // ⑦a team_send：成员还在跑时先打断当前回合再投递（否则只能等下一个 step 边界）
+    // ⑦a dsh_team_send：成员还在跑时先打断当前回合再投递（否则只能等下一个 step 边界）
     const sendMark = ctx.agents.ops.length;
-    const sent = await tool('team_send').execute(
+    const sent = await tool('dsh_team_send').execute(
       { teamId: team.id, to: 'alice', message: '换个方向：先补测试' }, lead,
     );
     assert.deepEqual(sent.interrupted, ['alice'], '运行中的成员被先打断');
@@ -317,13 +317,13 @@ const main = async () => {
     assert.deepEqual(ctx.agents.ops.slice(sendMark), [`interrupt:${sessionId}`, `send:${sessionId}`], '顺序是先 interrupt 再 sendMessage');
     // ⑦a2 interrupt:false 保留旧行为：不打断，直接按 step 边界投递
     const quietMark = ctx.agents.ops.length;
-    const quiet = await tool('team_send').execute(
+    const quiet = await tool('dsh_team_send').execute(
       { teamId: team.id, to: 'alice', message: '顺带一句', interrupt: false }, lead,
     );
     assert.equal(quiet.interrupted, undefined, 'interrupt:false 不打断');
     assert.deepEqual(ctx.agents.ops.slice(quietMark), [`send:${sessionId}`], 'interrupt:false 直接投递');
     // ⑦b 运行中只改 permissionPreset：热写 DSH 预设，不重建会话；换模型仍要求先 interrupt
-    const hot = await tool('team_member').execute(
+    const hot = await tool('dsh_team_member').execute(
       { action: 'update', teamId: team.id, memberId: spawned.member.id, permissionPreset: 'read-only' }, lead,
     );
     assert.equal(hot.restarted, false, '运行中改权限不重建会话');
@@ -332,13 +332,13 @@ const main = async () => {
     assert(ctx.presets.applied.some((p) => p.session === sessionId && p.name === 'read-only'), '热写 DSH 权限预设');
     let restartBlocked = null;
     try {
-      await tool('team_member').execute(
+      await tool('dsh_team_member').execute(
         { action: 'update', teamId: team.id, memberId: spawned.member.id, model: 'next-model' }, lead,
       );
     } catch (e) { restartBlocked = e; }
     assert(restartBlocked && /interrupt it before changing/.test(restartBlocked.message), '运行中换模型仍被拒');
     const interruptsBeforeCtl = ctx.agents.interrupts.length;
-    const ctl = await tool('team_control').execute(
+    const ctl = await tool('dsh_team_control').execute(
       { action: 'interrupt', teamId: team.id, memberId: spawned.member.id, reason: '换个方向' }, lead,
     );
     assert.equal(ctx.agents.interrupts.length, interruptsBeforeCtl + 1, 'interrupt 调了 subagents.interrupt');
@@ -355,16 +355,16 @@ const main = async () => {
     assert.equal((await api.get(`/api/tasks/${t3.task.id}`)).status, 'paused', 'interrupt 后仍保持 paused，不自动重派');
 
     // ⑦c abort 只需 taskId，把 paused 任务永久作废
-    const aborted = await tool('team_control').execute(
+    const aborted = await tool('dsh_team_control').execute(
       { action: 'abort', teamId: team.id, taskId: t3.task.id, reason: 'lead 决定不做' }, lead,
     );
     assert.equal(aborted.task.status, 'aborted', 'abort 把 paused 任务置为 aborted');
     assert.equal(aborted.wasRunning, false, 'paused 任务 abort 时不在运行');
     assert.equal((await api.get(`/api/tasks/${t3.task.id}`)).status, 'aborted', 'abort 结果已落库');
 
-    // ⑦d team_member update：换模型/上下文会重建会话，旧会话被 drain
+    // ⑦d dsh_team_member update：换模型/上下文会重建会话，旧会话被 drain
     const oldSession = spawned.member.agentSessionId;
-    const restarted = await tool('team_member').execute({
+    const restarted = await tool('dsh_team_member').execute({
       action: 'update', teamId: team.id, memberId: spawned.member.id,
       model: 'next-model', agentProvider: 'next-provider', contextMode: 'fresh', reasoningEffort: 'high',
     }, lead);
@@ -385,7 +385,7 @@ const main = async () => {
 
     // 只改 role 不重建会话
     const spawnedBeforeRole = ctx.agents.spawned.length;
-    const roleUpdated = await tool('team_member').execute(
+    const roleUpdated = await tool('dsh_team_member').execute(
       { action: 'update', teamId: team.id, memberId: spawned.member.id, role: 'reviewer' }, lead,
     );
     assert.equal(roleUpdated.restarted, false, '只改 role 不重建会话');
@@ -393,7 +393,7 @@ const main = async () => {
     assert.equal(roleUpdated.member.role, 'reviewer', 'role 已更新');
 
     // ⑦f 面板/看板停止：sidecar 只能把成员置 interrupted，Host 泵要真正中断成员会话
-    const t4 = await tool('team_task').execute({ teamId: team.id, subject: '强制停止用例' }, lead);
+    const t4 = await tool('dsh_team_task').execute({ teamId: team.id, subject: '强制停止用例' }, lead);
     await waitFor('t4 自动派发', async () => (
       (await api.get(`/api/tasks/${t4.task.id}`)).status === 'running' ? true : null
     ), 8000);
@@ -415,34 +415,34 @@ const main = async () => {
       '强制停止后 DSH 的 idle 回报不得解冻成员',
     );
 
-    // ⑦e team_member retire / remove：释放子会话，remove 必须 confirm
-    const retired = await tool('team_member').execute(
+    // ⑦e dsh_team_member retire / remove：释放子会话，remove 必须 confirm
+    const retired = await tool('dsh_team_member').execute(
       { action: 'retire', teamId: team.id, memberId: custom.member.id }, lead,
     );
     assert.equal(retired.status, 'retired', 'retire 保留成员行并置 retired');
     assert(ctx.agents.drains.some((d) => d.childIds.includes(custom.member.agentSessionId)), 'retire 释放子会话');
     await assert.rejects(
-      () => tool('team_member').execute({ action: 'update', teamId: team.id, memberId: custom.member.id, role: 'x' }, lead),
+      () => tool('dsh_team_member').execute({ action: 'update', teamId: team.id, memberId: custom.member.id, role: 'x' }, lead),
       /retired/,
       'retired 成员不能再 update 复活',
     );
 
     // ⑧ 第二个团队自定义预设：spawn 继承并可被成员覆盖
-    const t2Team = (await tool('team_create').execute({ name: 'plugin-readonly', workspace: tmp.ws, permissionPreset: 'read-only' }, lead)).team;
-    assert.equal(t2Team.permissionPreset, 'read-only', 'team_create 透传 permissionPreset');
+    const t2Team = (await tool('dsh_team_create').execute({ name: 'plugin-readonly', workspace: tmp.ws, permissionPreset: 'read-only' }, lead)).team;
+    assert.equal(t2Team.permissionPreset, 'read-only', 'dsh_team_create 透传 permissionPreset');
     assert.equal(t2Team.agentPreset ?? null, null, '团队默认仍为 null，由 spawn 时解析宿主默认');
-    const bob = await tool('team_spawn').execute({ teamId: t2Team.id, name: 'bob', prompt: '你是 bob，只读。' }, lead);
+    const bob = await tool('dsh_team_spawn').execute({ teamId: t2Team.id, name: 'bob', prompt: '你是 bob，只读。' }, lead);
     assert.equal(bob.member.permissionPreset, 'read-only', '成员继承团队 read-only 预设');
     assert.equal(bob.permissionPreset, 'read-only', '返回实际生效预设');
     assert.equal(bob.agentPreset, 'standard', '未指定团队预设时回退宿主默认');
     assert.equal(ctx.agents.spawned.at(-1).req.agentPreset, 'standard', '显式传宿主默认，避免继承 Lead 组合');
 
     await assert.rejects(
-      () => tool('team_member').execute({ action: 'remove', teamId: t2Team.id, memberId: bob.member.id }, lead),
+      () => tool('dsh_team_member').execute({ action: 'remove', teamId: t2Team.id, memberId: bob.member.id }, lead),
       /confirm:true/,
       'remove 必须显式 confirm',
     );
-    const removedBob = await tool('team_member').execute(
+    const removedBob = await tool('dsh_team_member').execute(
       { action: 'remove', teamId: t2Team.id, memberId: bob.member.id, confirm: true }, lead,
     );
     assert.equal(removedBob.removed, true, 'remove 删除成员行');

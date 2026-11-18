@@ -6,7 +6,7 @@
  *
  * 真实数据源：
  * - `GET /api/status` → 成员（每个 agent 成员一个 steering 卡片）；
- * - `GET /api/todos?team=` → 成员步骤（成员用 team_todo / todo_write 维护）；
+ * - `GET /api/todos?team=` → 成员步骤（成员用 dsh_team_todo / todo_write 维护）；
  * - `GET /api/messages?team=` → 排队回复（kind=steer 且 status=queued 的消息）；
  * - `POST /api/messages` → 面板排队一条 steer 消息，Host 插件负责投进成员会话；
  * - `GET /api/tasks` + `GET /api/dag` → 卡片跟随的任务（用于时长/步骤）。

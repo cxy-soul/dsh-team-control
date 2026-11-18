@@ -1,11 +1,11 @@
 # FAQ
 
-> **v2 变更（2026-11）**：worker 运行时与四域 broker 已移除；成员一律是真 sub-agent，权限由 DSH 权限预设按成员分配，成员审批经 `team_approve` 转发给 Lead。下文涉及 `worker` / `broker` / `policy` / `scope` 的段落为历史记录，以 [CONTRACT.md](../docs/CONTRACT.md) 与 [README](../README.md) 为准。
+> **v2 变更（2026-11）**：worker 运行时与四域 broker 已移除；成员一律是真 sub-agent，权限由 DSH 权限预设按成员分配，成员审批经 `dsh_team_approve` 转发给 Lead。下文涉及 `worker` / `broker` / `policy` / `scope` 的段落为历史记录，以 [CONTRACT.md](../docs/CONTRACT.md) 与 [README](../README.md) 为准。
 
 **Q：`npm start` 后没有输出，也没端口？**
 sidecar 的 ready 横幅是 **stdout 第一行单行 JSON**。若前面有任何 `console.log`（含第三方警告），解析就失败。看 `home/logs/`，并用 `node bin/dsh-team.mjs up --foreground` 前台复现。
 
-**Q：`team_*` 工具全部报连接失败？**
+**Q：`dsh_team_*` 工具全部报连接失败？**
 1. `cat ~/.dsh/team/run/sidecar.json` 看 pid 是否还活着；2. `node bin/dsh-team.mjs down` 再 `up`；3. 检查插件 `baseUrl` 与 sidecar 实际端口（`DSH_TEAM_PORT`/`--port`）是否一致；4. `autoStart:false` 时没人拉起它。
 
 **Q：`runner up` 报 `E_DENIED`，但策略里明明有 allow？**
@@ -36,7 +36,7 @@ sidecar 的 ready 横幅是 **stdout 第一行单行 JSON**。若前面有任何
 团队停止先由 sidecar 落 `interrupted`/`paused`，再靠 Host 插件 `forceStopPump` 轮询 `/api/status` 调 `subagents.interrupt`；看板停止会对 `board_task_team` 绑定的团队执行同一路径。若仍不停，检查成员是否有 `parentSessionId`（旧数据/未由插件 register 的成员没有），以及插件是否在跑该泵（`forceStopPollMs` 默认 1000ms）。
 
 **Q：点了停止，成员停了但 Lead 还在转？**
-`stopTeam` 会给 `team.stop_requested_at` 打时间戳，`forceStopPump` 每轮读 `/api/status` 的 `teams`，对 `team.lead_session_id` 指向的活跃会话调 `agent.cancel({kind:'user'})`（只停当前回合，会话保留，空闲则不动）。若 Lead 还转：确认团队是 `team_create` 建的（才有 `lead_session_id`）、Lead 会话在本 Host 进程内，且插件已加载本次改动；solo 看板任务没有团队，停止任务只标记 failed，不取消 Lead 回合。
+`stopTeam` 会给 `team.stop_requested_at` 打时间戳，`forceStopPump` 每轮读 `/api/status` 的 `teams`，对 `team.lead_session_id` 指向的活跃会话调 `agent.cancel({kind:'user'})`（只停当前回合，会话保留，空闲则不动）。若 Lead 还转：确认团队是 `dsh_team_create` 建的（才有 `lead_session_id`）、Lead 会话在本 Host 进程内，且插件已加载本次改动；solo 看板任务没有团队，停止任务只标记 failed，不取消 Lead 回合。
 
 **Q：`npm test` 里某条 AC 偶发失败？**
 AC 全部是真实子进程 + 真实端口。失败时脚本**保留临时目录并打印路径**，进那个目录看 `team.db`（`sqlite3 team.db '.tables'`）与 `logs/`。抖动多半是 `waitFor` 超时太短。

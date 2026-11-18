@@ -55,7 +55,7 @@ export function PlanCard({
   done,
   memberName,
   attempts,
-  emptyHint = 'Leader 用 team_todo 写入',
+  emptyHint = 'Leader 用 dsh_team_todo 写入',
   className,
 }: PlanCardProps) {
   /** PlanSteps 的阶段：清单全部完成才算 done（任务 done 但清单还有 open 项时不显示 Done in ...）。 */

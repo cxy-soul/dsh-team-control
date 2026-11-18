@@ -27,7 +27,7 @@ Worker 进程没有原生 IO 能力（ADR-002）。这套模型把「权限」�
   任务置 running + 写 `task.dispatch` 事件」，是**原子认领**；Host 调度器只负责把认领结果用
   `subagents.sendMessage(lead, sessionId, [{type:'text', text: 简报}])` 变成一条任务简报发给成员。
   sidecar 仍是唯一真相源，插件可随时重启。
-- **回报双通道**：成员主动调 `team_report_task`（精确摘要/成败）；宿主 `agent/status` 事件在回合结束
+- **回报双通道**：成员主动调 `dsh_team_report_task`（精确摘要/成败）；宿主 `agent/status` 事件在回合结束
   时兜底收尾（idle → 若有在途任务则 done，failed → 任务失败），保证「成员忘了回报」不会把 DAG 卡死。
 - **blocked ≠ failed**：成员报 `blocked` 时任务置 `blocked` 且**不消耗重试**，阻塞原因进 `blockers`
   与 `/api/blockers`，等 Lead 决策后 `dispatch`/`resume` 再发一次。
@@ -53,16 +53,16 @@ Worker 进程没有原生 IO 能力（ADR-002）。这套模型把「权限」�
 - `interrupt` 走 `subagents.interrupt`（中止当前回合）+ sidecar 同步落库 `interrupted`（C5 语义保留）；
   `resume` 重新武装并按需再派发。
 - 崩溃恢复：sidecar 重启后 agent 成员的 session 仍活在 DSH 里，插件在 `agent/status` 或下次
-  `team_spawn`/注册时重新对齐状态（`register` 幂等）；DSH 重启则成员 session 消失，需重新 `team_spawn`。
+  `dsh_team_spawn`/注册时重新对齐状态（`register` 幂等）；DSH 重启则成员 session 消失，需重新 `dsh_team_spawn`。
 - trace 里 agent 成员既有工具 span，也可以后续补 LLM span（`llm/stream` 上报，见 handoff 的
   Subsequent）。
-- 新增 4 个 sidecar 端点与 2 个工具（`team_dispatch`、`team_report_task`），AC-15 覆盖。
+- 新增 4 个 sidecar 端点与 2 个工具（`dsh_team_dispatch`、`dsh_team_report_task`），AC-15 覆盖。
 
 ## 补记（2026-10-29，实现期修正）
 
 初版设计写的是 `ctx.agentTeams.spawnTeammate/sendMessage/interrupt`。真机联调发现：本 profile 的
 bundle 列表里**没有 `agent-team` 那一挂**，`ctx.get('agentTeams')` 在运行时是 `undefined`
-（`cordis_inspect_query` 报的只是包声明的类型清单，不代表已挂载），`team_spawn` 直接报
+（`cordis_inspect_query` 报的只是包声明的类型清单，不代表已挂载），`dsh_team_spawn` 直接报
 「agentTeams 服务不可用」。
 
 改为依赖宿主**必然已挂载**的 `subagents` 服务（`dsh-subagent` bundle，几乎所有 profile 都启用），
@@ -76,5 +76,5 @@ bundle 列表里**没有 `agent-team` 那一挂**，`ctx.get('agentTeams')` 在�
 
 插件的 `spawnTeammate`/`sendMessage` 两个**工具名**保持不变（模型侧接口稳定）。`subagents` 不写进
 `inject` 而是 `ctx.get()` 探测：缺失时只影响 agent 团队，worker 团队与插件其它功能照常。
-真机验证：`team_spawn` 起出真子会话 → 简报送达 → 成员写文件 → `team_report_task` 回报 → DAG 推进，
+真机验证：`dsh_team_spawn` 起出真子会话 → 简报送达 → 成员写文件 → `dsh_team_report_task` 回报 → DAG 推进，
 同一成员被 `sendMessage` 唤醒复用跑第二个任务（2026-10-29 本机 4317 侧车实测）。
