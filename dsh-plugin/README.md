@@ -8,7 +8,7 @@
 
 ## 调用顺序写在哪（别让模型自己摸）
 
-- 14 个工具里**只有 `dsh_team_create` 标了 `START HERE`**：它的 description 直接给出 5 步顺序、`permissionPreset` 的语义、
+- 14 个工具里**只有 `dsh_team_create` 标了 `START HERE`**：它的 description 直接给出两道前置闸口（先澄清需求、再调研代码）、5 步顺序、`permissionPreset` 的语义、
   以及 `teamId` 取自 `result.team.id`；`dsh_team_spawn` 写明返回的 `member.id` 就是后面 `assignee` 要的值；
   `dsh_team_task` 写明简报必须自包含（成员看不到 Lead 的对话）。模型只看工具面就能按序走。
 - 完整配方（字段陷阱、拆任务与并发、症状→修法表）在 skill **`dsh-agent-team`**：[`../skills/dsh-agent-team/SKILL.md`](../skills/dsh-agent-team/SKILL.md)。

@@ -4,7 +4,7 @@
 
 | 工具 | 关键参数 | 语义 |
 |---|---|---|
-| `dsh_team_create` | `name`、`workspace`、`permissionPreset`、`agentPreset`、`maxMembers`、`maxConcurrency`、`failurePolicy`、`maxAttempts` | 建团队 + 团队级默认预设 |
+| `dsh_team_create` | `name`、`workspace`、`permissionPreset`、`agentPreset`、`maxMembers`、`maxConcurrency`、`failurePolicy`、`maxAttempts` | 建团队 + 团队级默认预设；**调用前必须先澄清需求（grilling 式一轮提问）并调研代码**，否则简报只能靠猜 |
 | `dsh_team_spawn` | `teamId`、`name`、`prompt`、`role`、`permissionPreset`、`agentPreset`、`agentProvider`、`model`、`reasoningEffort`、`contextMode`、`description` | 拉起真 sub-agent 成员；按成员覆盖预设 |
 | `dsh_team_member` | `action:"update"\\|"retire"\\|"remove"`、`memberId`、`model`、`agentProvider`、`contextMode`、`reasoningEffort`、`agentPreset`、`permissionPreset`、`role`、`confirm` | 改配置（模型/上下文会重建子会话）/retire/remove 成员 |
 | `dsh_team_preset` | `action:"list"\|"save"\|"show"`、`id`、`name`、`plugins[]`、`order` | Leader 自建 agentPreset：写固定目录并即时注册 |

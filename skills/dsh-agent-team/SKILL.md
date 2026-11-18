@@ -1,6 +1,6 @@
 ---
 name: dsh-agent-team
-description: 用 dsh-team 插件编排「真 sub-agent 成员」团队的最小可用流程：dsh_team_create → dsh_team_spawn → dsh_team_task → 成员 dsh_team_report_task → dsh_team_status/dsh_team_report；含 20 个 dsh_team_* 工具的字段清单、按任务难度给成员分配 provider/model/思考强度、按成员分配 permissionPreset 沙箱预设与 agentPreset 组合预设（工具/skill/MCP）、成员审批转发给 Lead 后由 dsh_team_approve 决定，以及 Lead（主 agent）的边界：只协调、不写代码、不做二次验收、派发完就结束回话、成员在跑时不催进度/不追问/不重发简报、收尾提一个精简 commit。Use when the user asks to create an agent team, orchestrate teammates, dispatch parallel work to sub-agents, or when a dsh_team_* call failed with an unexpected shape (unknown teamId, assignee by name, member never reports, approval timeout).
+description: 用 dsh-team 插件编排「真 sub-agent 成员」团队的最小可用流程（建团前先澄清需求、调研代码）：dsh_team_create → dsh_team_spawn → dsh_team_task → 成员 dsh_team_report_task → dsh_team_status/dsh_team_report；含 20 个 dsh_team_* 工具的字段清单、按任务难度给成员分配 provider/model/思考强度、按成员分配 permissionPreset 沙箱预设与 agentPreset 组合预设（工具/skill/MCP）、成员审批转发给 Lead 后由 dsh_team_approve 决定，以及 Lead（主 agent）的边界：只协调、不写代码、不做二次验收、派发完就结束回话、成员在跑时不催进度/不追问/不重发简报、收尾提一个精简 commit。Use when the user asks to create an agent team, orchestrate teammates, dispatch parallel work to sub-agents, or when a dsh_team_* call failed with an unexpected shape (unknown teamId, assignee by name, member never reports, approval timeout).
 user-invocable: true
 version: "2.0.0"
 ---
@@ -24,9 +24,11 @@ Lead = 主 agent。职责只有三件：**全局理解项目 → 把活拆成 `d
 下面几条是硬边界，违反它们比派错任务更伤：
 
 - **不写代码**：改文件、跑命令、修 bug、写脚本都属于成员。Lead 一旦自己下手，就会和成员的改动互相覆盖，
-  也失去并行的意义。只有用户明确说「你直接改」时才例外。
-- **用户报 Bug 不自己排查**：不要读代码定位，先把复现步骤与怀疑点 `dsh_team_send` 给归属成员，
-  由成员读代码、定位、修复；Lead 只做分派、汇总与状态汇报。
+  也失去并行的意义。只有用户明确说「你直接改」时才例外。**只读调研**（自己读文件、grep、codegraph，
+  或派 explore subagent 探索）不算「入场」，那是派活前该做的事。
+- **派活后不替成员排查**：任务派出去之后，用户报 Bug 时先把复现步骤与怀疑点 `dsh_team_send` 给归属成员，
+  由成员读代码、定位、修复；Lead 只做分派、汇总与状态汇报。**派活前的调研是 Lead 的职责**（见下一节），
+  派活后不再自己下场定位。
 - **不做二次验收**：成员 `dsh_team_report_task` 报 `done` 就是它的交付。**不要去读它改的文件、不要复跑
   lint/build/`npm test`、不要逐行判断改得对不对**——这些是用户的活。Lead 只需要把「谁改了什么、
   产物在哪、怎么验」转述给用户，验收结论由用户下。
@@ -48,6 +50,40 @@ Lead = 主 agent。职责只有三件：**全局理解项目 → 把活拆成 `d
 
 Lead 主动出手只有三种情况：用户给了新指令（改派/加任务/叫停）、成员卡死或报错（`dsh_team_control` 重派/换人）、
 成员触发审批（`dsh_team_approve` 放行或拒绝）。
+
+## 派活之前：先澄清，再调研，最后才建团
+
+**看到需求不要直接 `dsh_team_create`。** 先把需求问清（grilling），再把代码摸清（调研），最后才拆任务；
+跳过这一步，成员只能按你猜的意思干完，然后全队返工。
+
+### 1) 澄清：grilling（参考 `/grill-me`）
+
+把需求当一棵设计树问，**一轮问完当前能问的全部问题**：每题编号、给出你的推荐答案，用户答「是」即采纳推荐。
+
+```text
+❓ **Q1** - **范围**：这次只改 A 模块，还是连 B 一起？  ➡️ 只改 A
+❓ **Q2** - **验收**：……  ➡️ ……
+```
+
+- **事实自己查，决策问用户**：文件在哪、现有实现怎么写、依赖什么版本——自己读代码/跑命令查，
+  不要向用户要（可派一个一次性 `subagent` 并行查）。只把真正的取舍（范围、验收、优先级、风险偏好）交给用户。
+- 每轮答完重算 frontier：依赖未落地的问题放到下一轮，不猜答案。
+- **frontier 空了、用户确认「就这么干」之后**才允许建团。规格已很明确的小改动，一轮确认即可，别硬套。
+
+### 2) 调研：先摸清代码，再写简报
+
+- 必读：`AGENTS.md` / `CLAUDE.md`（本仓 + 目标目录的）、目录结构、相关模块入口。
+- 用 codegraph / grep 找现有实现、调用点、测试；确认「要改哪些文件、有没有现成模式、会碰谁」。
+- 调研只读不写（不违反「Lead 不写代码」）；**调研结论必须进任务简报**：文件路径、现状、约束、验收，
+  让成员不必再猜或重复找。
+- **Lead 上下文不够时，就派 explore subagent 去探索，不必自己读完**（这一步不算「入场」）：
+  用内置 `subagent`（fresh context，用完即弃，不进团队、不占团队名额）给一个**只读**任务——
+  明确写「只读探索，不要改文件」，要它回答 2~4 个具体问题，只回「文件路径 + 行号 + 结论 + 风险」；
+  事实多就并行派 2~3 个，汇总后再写简报。需要临时成员时用 scout 成员，但不要为此先建正式团队。
+
+### 3) 然后才是：建团 → 派任务
+
+调研完再定成员数与能力域（见「拆任务与并发」），让每个 `dsh_team_task.plan` 自带调研结论。
 
 ## 0. 权限：给每个成员分配 permissionPreset
 
@@ -127,6 +163,8 @@ requestId=req-...
 - 收到审批消息就尽快批，成员此时是暂停的；不要用 `dsh_team_control` 绕过。
 
 ## 1. 最小配方（照抄改字段）
+
+**前提**：已完成上一节的澄清与调研，顺序不能省。
 
 ```text
 dsh_team_create({ name: "writer-team", workspace: "C:\\abs\\workdir", permissionPreset: "workspace-write", agentPreset: "standard" })
@@ -230,6 +268,9 @@ dsh_team_spawn({ teamId, name:"architect", prompt:"...", agentProvider:"deepseek
 | 成员跑很久仍 `running` | 简报没让它调 `dsh_team_report_task`，或卡在审批，或确实在跑长任务 | 先看 `dsh_team_status` 的 `seq`/`stale`/blockers 与 `/api/approvals`：`seq` 在涨说明它还在干活，**别动**；只有 `stale`、或超过 `agentStartTimeoutMs`（默认 120s）毫无进展，才补 `prompt` → `interrupt` → `resume` → `assign`；确定不要了就 `abort` |
 | 成员还在跑，Lead 反复 `dsh_team_send` 催「到哪了」/重发简报 | 默认会打断成员当前回合，催一次丢一次中间成果，并把它逼成提前交卷 | 挂起等 `dsh_team_report_task`；只有方向错了 / `blocked` / 报错才发一次，改道优先 `interrupt:false` |
 | `dsh_team_task` 建完没人接 | 成员全 busy/queued，或 `assignee` 用了 name | 省略 `assignee` 让调度器挑，或 `dsh_team_status` 看谁 idle |
+| 用户一句话需求就 `dsh_team_create` 派活 | 没澄清范围/验收、没看代码，简报只能靠猜，成员干完才发现方向错 | 先按 grilling 问一轮（每题带推荐答案），再读 `AGENTS.md` + 相关代码，最后才建团 |
+| 简报只写「实现 X」，没有文件与现状 | 成员重头找、理解偏、返工；Lead 还得再解释一遍 | 调研结论写进 `plan`：目标文件、现有实现、约束、验收命令 |
+| Lead 上下文快满了还硬读整个仓库 | 越读越糊，简报没写完就爆上下文 | 派 1~3 个只读 explore subagent（fresh context）并行查，只收「路径+行号+结论+风险」 |
 | 任务 `done` 但产物不对 | 成员看不到 Lead 的对话 | 简报自包含：目标文件、验收标准、不要假设它读过本对话；产物好坏交给用户判定，Lead 不自己返工复核 |
 | Lead 又去读 diff / 复跑 lint、测试「确认没问题」 | 做了二次验收，把用户的活抢了，还白烧一轮上下文 | 停手：只向用户转告改了什么、产物在哪、怎么验 |
 | Lead 顺手自己改一个小地方 | 与成员并发写同一文件，改动互相覆盖 | 一律走 `dsh_team_task` 派给成员；只有用户明确说「你直接改」才自己动手 |
