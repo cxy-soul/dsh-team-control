@@ -6,6 +6,12 @@
 
 - 24 个工具改名且不保留旧名：`team_*` → `dsh_team_*`，`board_*` → `dsh_team_board_*`（如 `team_create` → `dsh_team_create`、`board_task_create` → `dsh_team_board_task_create`）。插件描述、sidecar 提示词、面板、`skills/dsh-agent-team/SKILL.md`、tests 与活跃文档同步；三个包（cli / plugin / ui）统一升 0.3.0。
 
+## 2026-11-18 · dsh_team_board_task_create 支持计划/执行/团队模型路由
+
+- `dsh_team_board_task_create` 新增 `planRoute`、`leadRoute`、`teamModels[]`、`prewalk` 四个入参：路由接受 `{provider?,model,reasoningEffort?}` 或 `"provider/model"`，缺 `model` 直接报错，建卡前用 `assertRouteEnabled` 预校验启用状态；省略时跟随看板工作区设置。
+- `dsh_team_board_task_get` 输出补 `planRoute`/`leadRoute`/`teamModels`/`prewalk`；`tests/plugin-board-agent-tools.mjs` 覆盖字符串归一化、白名单落库、读回与非法路由报错。
+- 文档同步：`docs/CONTRACT.md`、`claude/public-interfaces.md`、`dsh-plugin/claude/public-interfaces.md`、`skills/dsh-agent-team/SKILL.md`。
+
 ## 2026-11-15 · schema v21 / 停止团队与停止看板任务都停会话 / 新任务归属判断
 
 - schema v21：`board_task.stop_requested_at`；看板停止任务时 `boardPump` 按时间戳取消 Lead/规划会话的当前回合（solo 任务没有团队也能停），`live` 额外带出规划期停止的任务。面板任务详情显示「已于 … 停止」。

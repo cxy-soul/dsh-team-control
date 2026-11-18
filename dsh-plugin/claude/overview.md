@@ -23,7 +23,7 @@
 - `dsh_team_board_plan_submit`（:2787）→ `POST /api/board/agents/plan`；executionMode=new 时 5s 后 dispose 规划会话。
 - `dsh_team_board_task_status` → `POST /api/board/agents/status` {sessionId,status,summary}。
 - `dsh_team_task_get` → `GET /api/tasks/<id>`（校验 teamId 归属）+ `GET /api/dag?team=` 取同 id 节点，返回 { task, node }。
-- `dsh_team_board_task_create` → `POST /api/board/tasks`；`workspaceId` 省略时按 `GET /api/board/by-session/<sid>` → `GET /api/workspaces`（仅 1 个时）推断，否则报缺 workspaceId。传了但不在注册表里时按 `workspacePath` 改挂，仍解析不出直接报错（防幽灵工作区）。
+- `dsh_team_board_task_create` → `POST /api/board/tasks`；`workspaceId` 省略时按 `GET /api/board/by-session/<sid>` → `GET /api/workspaces`（仅 1 个时）推断，否则报缺 workspaceId。传了但不在注册表里时按 `workspacePath` 改挂，仍解析不出直接报错（防幽灵工作区）；`planRoute`/`leadRoute`/`teamModels` 先归一化（对象或 `"provider/model"` 字符串，缺 model 报错），再过 `assertRouteEnabled` 预校验启用状态，最后随 body 下发。
 - `dsh_team_board_task_get` → 有 `taskId` 走 `GET /api/board/tasks/<id>`，否则 `GET /api/board/by-session/<sid>`，结果按 `pick()` 精简字段返回。
 
 ## 配置解析（`resolveConfig`）

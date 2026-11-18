@@ -24,7 +24,7 @@
 | `dsh_team_memory_list` | `teamId`、`scope`、`memberId`、`kind`、`tag`、`q`、`limit` | 列记忆元数据（不含 value 正文） |
 | `dsh_team_memory_share` | `teamId`、`memoryId`、`visibility:"private"\|"team"\|"shared"` | 改记忆可见性（Lead 把成员记忆转给其他成员） |
 | `dsh_team_memory_delete` | `teamId`、`memoryId` | 永久删除一条记忆 |
-| `dsh_team_board_task_create` | `title`、`description`、`workspaceId`、`workspacePath`、`auto`、`needPlan`、`useTeam`、`executionMode`、`gitBranch` | 成员/Lead 在会话里直接建看板任务；`workspaceId` 省略时按 by-session → 唯一工作区推断；不存在时按 `workspacePath` 改挂，仍解析不出报错 |
+| `dsh_team_board_task_create` | `title`、`description`、`workspaceId`、`workspacePath`、`auto`、`needPlan`、`useTeam`、`executionMode`、`gitBranch`、`planRoute`、`leadRoute`、`teamModels[]`、`prewalk` | 成员/Lead 在会话里直接建看板任务；`workspaceId` 省略时按 by-session → 唯一工作区推断；不存在时按 `workspacePath` 改挂，仍解析不出报错。模型路由接受 `{ provider?, model, reasoningEffort? }` 或 `"provider/model"`，缺 `model` 报错；省略则跟随看板工作区设置，`teamModels` 省略/空数组表示不限成员模型 |
 | `dsh_team_board_task_get` | `taskId`（可选） | 读看板任务；省略 `taskId` 时返回当前会话关联的任务 |
 | `dsh_team_board_plan_submit` | `plan`、`summary` | 规划会话提交计划：看板任务 `planning → planned`，same 模式同时绑定执行会话 |
 | `dsh_team_board_task_status` | `status:"done"|"failed"|"inprogress"`、`summary` | Lead 会话回报看板任务结果 |

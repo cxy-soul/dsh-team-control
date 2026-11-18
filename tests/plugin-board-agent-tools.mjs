@@ -114,6 +114,36 @@ const main = async () => {
     } catch (e) { ghostErr = e; }
     assert.match(String(ghostErr?.message || ghostErr), /workspaceId 不存在/, '无法解析时拒绝建卡');
 
+    // 1d) 计划/执行/团队模型路由：对象与 "provider/model" 字符串都归一化后落库
+    const routed = await createTool.execute({
+      title: '带模型路由的任务', workspaceId: 'ws-at', auto: false,
+      planRoute: { provider: 'p', model: 'm-plan', reasoningEffort: 'high' },
+      leadRoute: 'p/m-lead',
+      teamModels: [{ provider: 'p', model: 'm-team' }, 'p/m-team2'],
+      prewalk: true,
+    }, exec);
+    assert.deepEqual(routed.task.planRoute, { provider: 'p', model: 'm-plan', reasoningEffort: 'high' }, '计划模型落库');
+    assert.deepEqual(routed.task.leadRoute, { provider: 'p', model: 'm-lead', reasoningEffort: null }, '执行模型从字符串归一化');
+    assert.deepEqual(routed.task.teamModels.map((m) => m.model), ['m-team', 'm-team2'], '团队模型白名单落库');
+    assert.equal(routed.task.prewalk, true, 'prewalk 落库');
+
+    // 1e) 模型路由在 board_task_get 里可见
+    const routedGot = await getTool.execute({ taskId: routed.task.id }, exec);
+    assert.equal(routedGot.task.planRoute.model, 'm-plan', 'board_task_get 返回计划模型');
+    assert.equal(routedGot.task.teamModels.length, 2, 'board_task_get 返回团队模型白名单');
+
+    // 1f) 非法 route：缺 model / teamModels 不是数组时直接报错，不建卡
+    let routeErr = null;
+    try {
+      await createTool.execute({ title: '坏计划路由', workspaceId: 'ws-at', auto: false, planRoute: { provider: 'p' } }, exec);
+    } catch (e) { routeErr = e; }
+    assert.match(String(routeErr?.message || routeErr), /planRoute 需要 model/);
+    routeErr = null;
+    try {
+      await createTool.execute({ title: '坏白名单', workspaceId: 'ws-at', auto: false, teamModels: 'p/m' }, exec);
+    } catch (e) { routeErr = e; }
+    assert.match(String(routeErr?.message || routeErr), /teamModels 需要数组/);
+
     // 2) 按 taskId 查看板任务
     const got = await getTool.execute({ taskId: made.task.id }, exec);
     assert.equal(got.task.id, made.task.id);

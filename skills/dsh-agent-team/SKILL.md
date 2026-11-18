@@ -251,6 +251,8 @@ dsh_team_spawn({ teamId, name:"architect", prompt:"...", agentProvider:"deepseek
 | 用户明确说「建看板任务 / 加一张卡 / 单开一个会话」 | 一律 `dsh_team_board_task_create`，禁止 `dsh_team_task` |
 
 `dsh_team_board_task_create` 的 `workspaceId` / `workspacePath` 沿用它所在任务的值，不要手填占位 UUID；判断不清先问用户一句。
+要指定卡片用的模型时传 `planRoute` / `leadRoute` / `teamModels`：形状为 `{ provider?, model, reasoningEffort? }` 或 `"provider/model"`，
+先用 `dsh_team_models` 拿可用路由；缺 `model` 会直接报错，省略则跟随看板工作区设置，`teamModels` 省略即不限制成员模型。
 
 ## 4. 常见错法与症状
 

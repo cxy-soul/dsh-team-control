@@ -110,7 +110,7 @@
 | `dsh_team_memory_delete` | 删除一条记忆文件（团队删除不级联） |
 | `dsh_team_board_plan_submit` | 规划会话提交计划，任务 `planning → planned`（same 模式同时绑定执行会话） |
 | `dsh_team_board_task_status` | Lead 会话回报看板任务 `done`/`failed`/`inprogress` |
-| `dsh_team_board_task_create` | 成员创建看板任务（`workspaceId` 可省略：依次用当前任务工作区 / 唯一工作区推断），支持 `gitBranch` |
+| `dsh_team_board_task_create` | 成员创建看板任务（`workspaceId` 可省略：依次用当前任务工作区 / 唯一工作区推断），支持 `gitBranch`、`planRoute`/`leadRoute`/`teamModels`（模型路由，省略跟随看板设置）与 `prewalk` |
 | `dsh_team_board_task_get` | 查本会话关联的看板任务，或按 `taskId` 查任意任务（精简字段） |
 
 ## 4. Host 同源代理（`dsh-plugin-ui/index.js`）

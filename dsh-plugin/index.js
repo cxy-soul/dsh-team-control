@@ -812,6 +812,41 @@ async function assertRouteEnabled(s, ctx, provider, model, effort = null) {
   }
 }
 
+/**
+ * 归一化看板建卡入参的模型路由：接受 { provider?, model, reasoningEffort? } 或
+ * "provider/model"/"model" 字符串；缺 model 返回 null（由调用方决定报错还是丢弃）。
+ */
+function normalizeBoardRoute(input) {
+  if (input == null) return null;
+  let provider = null;
+  let model = null;
+  let effort = null;
+  if (typeof input === 'string') {
+    const raw = input.trim();
+    const slash = raw.indexOf('/');
+    if (slash > 0) {
+      provider = raw.slice(0, slash).trim() || null;
+      model = raw.slice(slash + 1).trim() || null;
+    } else {
+      model = raw || null;
+    }
+  } else if (typeof input === 'object') {
+    provider = input.provider != null && String(input.provider).trim() ? String(input.provider).trim() : null;
+    model = input.model != null && String(input.model).trim() ? String(input.model).trim() : null;
+    effort = input.reasoningEffort != null && String(input.reasoningEffort).trim() ? String(input.reasoningEffort).trim() : null;
+  }
+  if (!model) return null;
+  return { provider, model, ...(effort ? { reasoningEffort: effort } : {}) };
+}
+
+/** 显式 route 入参：undefined/null = 未设置，其余必须带 model，否则提前报错。 */
+function boardRouteParam(input, label) {
+  if (input == null) return null;
+  const route = normalizeBoardRoute(input);
+  if (!route) throw new Error(`${label} 需要 model：传 { provider?, model, reasoningEffort? } 或 "provider/model"`);
+  return route;
+}
+
 function rememberMember(sessionId, teamId, memberId, cwd, permissionPreset = null, name = null) {
   if (sessionId == null) return;
   const key = String(sessionId);
@@ -3787,7 +3822,7 @@ function buildTools(s, ctx) {
 
   tools.push({
     name: 'dsh_team_board_task_create',
-    description: 'Create a new workspace-board task card (the user-facing queue the board scheduler picks up) — use it when the user asks for a new task that is a separate deliverable or deserves its own session/branch (not a step of the current task, which is dsh_team_task). This is NOT a team DAG task: team_* tools stay inside the current team. workspaceId defaults to the caller own board task, then to the only registered workspace; pass it when either is ambiguous. Pass gitBranch to run the new task on a git branch ("" = auto `task/<id>`, omitted = no branch).',
+    description: 'Create a new workspace-board task card (the user-facing queue the board scheduler picks up) — use it when the user asks for a new task that is a separate deliverable or deserves its own session/branch (not a step of the current task, which is dsh_team_task). This is NOT a team DAG task: team_* tools stay inside the current team. workspaceId defaults to the caller own board task, then to the only registered workspace; pass it when either is ambiguous. Pass gitBranch to run the new task on a git branch ("" = auto `task/<id>`, omitted = no branch). Pin models with planRoute/leadRoute/teamModels: call dsh_team_models first and pass { provider?, model, reasoningEffort? } (or "provider/model"); omitted routes follow the board settings, and the card displays the models it uses.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -3801,6 +3836,46 @@ function buildTools(s, ctx) {
         useTeam: { type: 'boolean', description: 'Let the Lead orchestrate a team (default true).' },
         executionMode: { type: 'string', enum: ['same', 'new'], description: 'same = plan and execute in one session; new = execute in a fresh session.' },
         gitBranch: { type: 'string', description: 'Git branch to switch to before spawning; "" auto-generates task/<id>.' },
+        planRoute: {
+          type: 'object',
+          additionalProperties: false,
+          description: 'Planning model; omit to follow the board workspace settings. Use dsh_team_models to pick provider/model/reasoningEffort.',
+          properties: {
+            provider: { type: 'string', description: 'Provider id from dsh_team_models; omit when the model id is unique.' },
+            model: { type: 'string', description: 'Model id from dsh_team_models.' },
+            reasoningEffort: { type: 'string', description: 'Optional reasoning effort id from team_models.' },
+          },
+          required: ['model'],
+        },
+        leadRoute: {
+          type: 'object',
+          additionalProperties: false,
+          description: 'Execution (Lead) model; omit to follow the board workspace settings.',
+          properties: {
+            provider: { type: 'string', description: 'Provider id from dsh_team_models; omit when the model id is unique.' },
+            model: { type: 'string', description: 'Model id from dsh_team_models.' },
+            reasoningEffort: { type: 'string', description: 'Optional reasoning effort id from team_models.' },
+          },
+          required: ['model'],
+        },
+        teamModels: {
+          type: 'array',
+          description: 'Whitelist of models team members may use (dsh_team_spawn enforces it; empty/omitted = unrestricted). Each item is the same { provider?, model, reasoningEffort? } route.',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              provider: { type: 'string', description: 'Provider id from dsh_team_models; omit when the model id is unique.' },
+              model: { type: 'string', description: 'Model id from dsh_team_models.' },
+              reasoningEffort: { type: 'string', description: 'Optional reasoning effort id from team_models.' },
+            },
+            required: ['model'],
+          },
+        },
+        prewalk: {
+          type: 'boolean',
+          description: 'Experimental: with executionMode="same", switch the same session to leadRoute after the plan first changes files (default false).',
+        },
       },
       required: ['title'],
     },
@@ -3848,6 +3923,24 @@ function buildTools(s, ctx) {
           }
         }
       }
+      // 模型路由：只在显式传入时下发（省略则跟随看板工作区设置），并提前校验可用性，
+      // 避免建卡成功、真正开会话时才因为模型被禁用而失败。
+      const planRoute = args.planRoute === undefined ? undefined : boardRouteParam(args.planRoute, 'planRoute');
+      const leadRoute = args.leadRoute === undefined ? undefined : boardRouteParam(args.leadRoute, 'leadRoute');
+      let teamModels;
+      if (args.teamModels !== undefined) {
+        if (args.teamModels === null) {
+          teamModels = null; // 显式 null 等价于不限制
+        } else if (!Array.isArray(args.teamModels)) {
+          throw new Error('teamModels 需要数组，每项为 { provider?, model, reasoningEffort? } 或 "provider/model"');
+        } else {
+          teamModels = args.teamModels.map((m, i) => boardRouteParam(m, `teamModels[${i}]`)).filter(Boolean);
+          if (!teamModels.length) teamModels = null; // 空数组等价于不限制
+        }
+      }
+      for (const route of [planRoute, leadRoute, ...(teamModels || [])]) {
+        if (route) await assertRouteEnabled(s, ctx, route.provider, route.model, route.reasoningEffort || null);
+      }
       const task = await request(s, '/api/board/tasks', {
         method: 'POST',
         body: {
@@ -3860,6 +3953,10 @@ function buildTools(s, ctx) {
           ...(args.useTeam !== undefined ? { useTeam: args.useTeam } : {}),
           ...(args.executionMode !== undefined ? { executionMode: args.executionMode } : {}),
           ...(args.gitBranch !== undefined ? { gitBranch: args.gitBranch } : {}),
+          ...(planRoute !== undefined ? { planRoute } : {}),
+          ...(leadRoute !== undefined ? { leadRoute } : {}),
+          ...(teamModels !== undefined ? { teamModels } : {}),
+          ...(args.prewalk !== undefined ? { prewalk: args.prewalk } : {}),
         },
       });
       return { task };
@@ -3868,7 +3965,7 @@ function buildTools(s, ctx) {
 
   tools.push({
     name: 'dsh_team_board_task_get',
-    description: 'Read the current workspace-board task of this session (status/planSummary/lastError/gitBranch/sessions) when taskId is omitted, or any board card by taskId. Cheap and safe to call every turn: it returns the status snapshot, not the whole plan body. Use it to decide whether to keep working, wait, or report via dsh_team_board_task_status.',
+    description: 'Read the current workspace-board task of this session (status/planSummary/lastError/gitBranch/planRoute/leadRoute/teamModels/sessions) when taskId is omitted, or any board card by taskId. Cheap and safe to call every turn: it returns the status snapshot, not the whole plan body. Use it to decide whether to keep working, wait, or report via dsh_team_board_task_status.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -3883,6 +3980,8 @@ function buildTools(s, ctx) {
         id: t.id, workspaceId: t.workspaceId, title: t.title, status: t.status,
         executionMode: t.executionMode, needPlan: t.needPlan, useTeam: t.useTeam,
         gitBranch: t.gitBranch || null,
+        planRoute: t.planRoute || null, leadRoute: t.leadRoute || null,
+        teamModels: t.teamModels || null, prewalk: !!t.prewalk,
         planSummary: t.planSummary || null, lastError: t.lastError || null,
         planningSessionId: t.planningSessionId || null, leadSessionId: t.leadSessionId || null,
         teams: t.teams || [], archivedAt: t.archivedAt || null, updatedAt: t.updatedAt,
